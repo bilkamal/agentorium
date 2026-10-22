@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start the Agent Office server. Usage: ./run.sh [--reload]
+# Start the Agentorium server. Usage: ./run.sh [--reload]
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -13,4 +13,4 @@ fi
 
 HOST="${OFFICE_HOST:-$(grep -E '^OFFICE_HOST=' .env | cut -d= -f2)}"
 PORT="${OFFICE_PORT:-$(grep -E '^OFFICE_PORT=' .env | cut -d= -f2)}"
-exec "$PY" -m uvicorn agentoffice.server:app --host "${HOST:-127.0.0.1}" --port "${PORT:-8000}" "$@"
+exec "$PY" -m uvicorn agentorium.server:app --host "${HOST:-127.0.0.1}" --port "${PORT:-8000}" "$@"

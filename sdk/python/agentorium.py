@@ -1,8 +1,8 @@
-"""Agent Office client — drive the office visualiser from any Python workflow.
+"""Agentorium client — drive the office visualiser from any Python workflow.
 
 Zero dependencies (urllib only). Usage:
 
-    from agentoffice import Office
+    from agentorium import Office
     office = Office("http://127.0.0.1:8000", token=None)
     session = office.session("My LangGraph run")
     session.register("planner", "Planner", role="supervisor", color="#1a9f5c")
@@ -48,7 +48,7 @@ class Office:
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
             if self.strict or stream:
                 raise
-            print(f"[agentoffice] {method} {path} failed: {exc}")
+            print(f"[agentorium] {method} {path} failed: {exc}")
             return None
 
     def session(self, title: str = "External workflow") -> "Session":

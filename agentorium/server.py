@@ -16,7 +16,7 @@ from .documents import ALLOWED_EXTENSIONS, MAX_UPLOAD_BYTES, DocumentError, extr
 from .orchestrator import EXTERNAL_EVENT_TYPES, Orchestrator, Session
 from .registry import COLORS, HAIR, ROLES, RegistryError, registry
 
-app = FastAPI(title="Agent Office", version="0.2.0")
+app = FastAPI(title="Agentorium", version="0.2.0")
 orchestrator = Orchestrator()
 WEB_DIR = ROOT / "web"
 SDK_DIR = ROOT / "sdk"

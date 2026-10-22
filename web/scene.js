@@ -1,4 +1,4 @@
-/* Agent Office — isometric 2D office drawn on a canvas with smooth vector shapes.
+/* Agentorium — isometric 2D office drawn on a canvas with smooth vector shapes.
  *
  * Public API (window.Scene):
  *   setRoster(agents)              agents: [{id, name, color, hair, role}] — rebuilds the office layout
@@ -228,7 +228,7 @@ window.Scene = (() => {
     } else poly([proj(0, tv.r0 + 0.1, 29), proj(0, tv.r1 - 0.1, 29), proj(0, tv.r1 - 0.1, 15), proj(0, tv.r0 + 0.1, 15)], '#05060a');
     // sign + clock on the back wall
     const sc = cols - 4.6; poly([proj(sc, 0, 41), proj(sc + 3.8, 0, 41), proj(sc + 3.8, 0, 29), proj(sc, 0, 29)], '#3a2a1a');
-    const st = proj(sc + 1.9, 0, 33); rr(st.x - 23, st.y - 6.5, 46, 9, 2, '#5a4030'); text('AGENT OFFICE', st.x, st.y, '#f0d9a0', 'bold 5.5px system-ui, sans-serif');
+    const st = proj(sc + 1.9, 0, 33); rr(st.x - 23, st.y - 6.5, 46, 9, 2, '#5a4030'); text('AGENTORIUM', st.x, st.y, '#f0d9a0', 'bold 5.5px system-ui, sans-serif');
     drawClock(proj(layout.clock.c, 0, 37), 6.5);
     // rug
     layout.items.filter((i) => i.kind === 'rug').forEach((i) => poly([proj(i.c, i.r), proj(i.c + i.w, i.r), proj(i.c + i.w, i.r + i.h), proj(i.c, i.r + i.h)], PAL.rug, PAL.rugEdge));

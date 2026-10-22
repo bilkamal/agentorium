@@ -1,14 +1,14 @@
-# Contributing to Agent Office
+# Contributing to Agentorium
 
 Thanks for helping! Good first contributions:
 
 - **Adapters** for agent frameworks (LangGraph, CrewAI, AutoGen, OpenAI Agents SDK, Claude Agent SDK…)
-  that translate the framework's callbacks into Agent Office events. Put them in `sdk/adapters/` with
+  that translate the framework's callbacks into Agentorium events. Put them in `sdk/adapters/` with
   a runnable example in `examples/`.
 - **Office furniture, activities and themes** in `web/scene.js` (everything is drawn with plain
   canvas calls — no build step).
-- **Translations**: add a language block to `I18N` in `web/app.js` and `MOCK_TEXT` in `agentoffice/llm.py`.
-- **Providers**: `agentoffice/llm.py` has `anthropic`, `openai`-compatible and `mock`.
+- **Translations**: add a language block to `I18N` in `web/app.js` and `MOCK_TEXT` in `agentorium/llm.py`.
+- **Providers**: `agentorium/llm.py` has `anthropic`, `openai`-compatible and `mock`.
 
 ## Development
 

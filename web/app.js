@@ -1,4 +1,4 @@
-/* Agent Office web UI — vanilla JS over REST + SSE. Depends on scene.js (window.Scene). */
+/* Agentorium web UI — vanilla JS over REST + SSE. Depends on scene.js (window.Scene). */
 (() => {
   const $ = (sel) => document.querySelector(sel);
   const api = {

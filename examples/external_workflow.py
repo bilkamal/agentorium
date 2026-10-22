@@ -1,4 +1,4 @@
-"""Minimal external workflow that uses Agent Office purely as a visualiser.
+"""Minimal external workflow that uses Agentorium purely as a visualiser.
 
 Run the server (./run.sh), then:  python examples/external_workflow.py
 Open the UI, pick the session "Example: external workflow" and watch the office.
@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "sdk" / "python"))
-from agentoffice import Office  # noqa: E402
+from agentorium import Office  # noqa: E402
 
 office = Office("http://127.0.0.1:8000")
 s = office.session("Example: external workflow")

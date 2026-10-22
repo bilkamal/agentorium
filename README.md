@@ -1,4 +1,4 @@
-# Agent Office
+# Agentorium — the office where your agents live
 
 <p align="center"><img src="docs/demo.gif" width="640" alt="Agents walking between the lounge and their desks while a task runs"></p>
 
@@ -30,10 +30,10 @@ Two ways to use it:
 ## Quick start
 
 ```bash
-git clone <this repo> && cd agent-office
+git clone <this repo> && cd agentorium
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-./run.sh                      # or: uvicorn agentoffice.server:app --port 8000
+./run.sh                      # or: uvicorn agentorium.server:app --port 8000
 ```
 
 Open <http://127.0.0.1:8000>. The three starter agents use the **mock** provider, so you can click
@@ -43,8 +43,8 @@ providers in **⚙ Team settings**.
 ## Visualise your own workflow
 
 ```python
-import sys; sys.path.insert(0, "path/to/agent-office/sdk/python")
-from agentoffice import Office
+import sys; sys.path.insert(0, "path/to/agentorium/sdk/python")
+from agentorium import Office
 
 office = Office("http://127.0.0.1:8000")
 s = office.session("My LangGraph run")
@@ -60,7 +60,7 @@ for message in s.user_messages():      # whatever the user types in the chat pan
     ...
 ```
 
-The same calls exist in `sdk/js/agentoffice.js`. `examples/external_workflow.py` is a complete
+The same calls exist in `sdk/js/agentorium.js`. `examples/external_workflow.py` is a complete
 runnable example. Everything is best-effort: a visualiser that is down must never break your
 workflow, so failures are logged, not raised (pass `strict=True` to change that).
 
@@ -121,7 +121,7 @@ authentication before exposing it on a network; `data/agents.json` contains API 
 ## Layout
 
 ```
-agentoffice/
+agentorium/
   config.py        server settings + env seeding
   registry.py      editable agent roster (roles, providers, keys) → data/agents.json
   llm.py           anthropic / openai-compatible / mock clients

@@ -1,6 +1,6 @@
-/* Agent Office client for Node.js / browsers — drive the office visualiser from any JS workflow.
+/* Agentorium client for Node.js / browsers — drive the office visualiser from any JS workflow.
  *
- *   import { Office } from './agentoffice.js';
+ *   import { Office } from './agentorium.js';
  *   const office = new Office('http://127.0.0.1:8000');
  *   const s = await office.session('My workflow');
  *   await s.register('coder', 'Coder', { role: 'worker', color: '#e67e22' });
@@ -20,7 +20,7 @@ export class Office {
       const res = await fetch(`${this.baseUrl}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
       if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
       return res.json();
-    } catch (err) { if (this.strict) throw err; console.warn('[agentoffice]', method, path, err.message); return null; }
+    } catch (err) { if (this.strict) throw err; console.warn('[agentorium]', method, path, err.message); return null; }
   }
   async session(title = 'External workflow') { const d = await this.request('POST', '/api/sessions', { kind: 'external', title }); return new Session(this, d?.id); }
   attach(id) { return new Session(this, id); }
