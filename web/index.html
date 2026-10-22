@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Office</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo">⌂</span> Agent Office <small data-i18n="tagline">visualisasi multi-agent</small></div>
+  <div class="agents" id="agent-chips"></div>
+  <div class="session-controls">
+    <select id="session-select" title="Session"></select>
+    <button id="new-session" class="btn" data-i18n="new">+ Baru</button>
+    <button id="delete-session" class="btn ghost" data-i18n-title="delete">🗑</button>
+    <button id="open-settings" class="btn ghost" data-i18n-title="settings">⚙</button>
+    <select id="lang-select" title="Bahasa / Language"><option value="id">ID · Indonesia</option><option value="en">EN · English</option></select>
+  </div>
+</header>
+<div id="mock-banner" class="banner" hidden></div>
+
+<main class="layout">
+  <section class="panel workflow">
+    <div class="panel-head">
+      <h2 data-i18n="workflow">Kantor</h2>
+      <div class="stepper" id="stepper">
+        <span data-stage="discussing" data-i18n="st_discussing">Diskusi</span>
+        <span data-stage="planning" data-i18n="st_planning">Rencana</span>
+        <span data-stage="awaiting_approval" data-i18n="st_awaiting_approval">Persetujuan</span>
+        <span data-stage="executing" data-i18n="st_executing">Eksekusi</span>
+        <span data-stage="done" data-i18n="st_done">Selesai</span>
+      </div>
+    </div>
+
+    <div class="scene-wrap"><canvas id="scene" aria-label="Agent office"></canvas></div>
+
+    <div class="plan" id="plan-card" hidden>
+      <div class="plan-head"><h3 data-i18n="plan">Rencana</h3><span id="plan-status" class="tag"></span></div>
+      <p id="plan-objective"></p>
+      <ol id="plan-steps"></ol>
+      <details id="plan-extra"><summary data-i18n="plan_extra">Kriteria penerimaan &amp; asumsi</summary><div id="plan-extra-body"></div></details>
+    </div>
+
+    <div class="log-wrap">
+      <div class="panel-head"><h3 data-i18n="activity">Aktivitas</h3><button id="clear-log" class="btn ghost small" data-i18n="clear">bersihkan</button></div>
+      <ul id="log"></ul>
+    </div>
+  </section>
+
+  <section class="panel chat">
+    <div class="panel-head">
+      <h2 id="chat-title">Chat</h2>
+      <span id="busy" class="tag busy" hidden><span data-i18n="working">sedang bekerja…</span> <button id="cancel" class="link" data-i18n="cancel">batalkan</button></span>
+    </div>
+    <div id="messages" class="messages"></div>
+    <div id="approval" class="approval" hidden>
+      <span data-i18n="approval_text">Rencana menunggu keputusan Anda.</span>
+      <button id="approve" class="btn primary" data-i18n="approve">Setujui &amp; eksekusi</button>
+      <button id="reject" class="btn" data-i18n="reject">Minta perubahan</button>
+    </div>
+    <div id="error" class="error" hidden></div>
+    <div class="docs" id="docs"></div>
+    <form id="composer" class="composer">
+      <label class="upload btn ghost" data-i18n-title="upload_title">
+        📎 <input type="file" id="file-input" accept=".pdf,.docx,.xlsx,.txt,.md" multiple hidden>
+      </label>
+      <textarea id="input" rows="2" data-i18n-placeholder="placeholder" placeholder="Ceritakan tugas untuk tim… (Enter kirim, Shift+Enter baris baru)"></textarea>
+      <button type="submit" class="btn primary" id="send">Kirim</button>
+    </form>
+  </section>
+</main>
+
+<dialog id="settings" class="dialog wide">
+  <div class="dialog-head"><h3 data-i18n="settings">Pengaturan tim</h3><button type="button" class="btn ghost" id="settings-close">✕</button></div>
+  <p class="hint" data-i18n="settings_hint">Satu client (bicara dengan Anda), satu supervisor (merencanakan &amp; meninjau), dan berapa pun worker. Setiap agent punya provider, model, dan API key sendiri.</p>
+  <div class="settings-grid">
+    <ul id="agent-list" class="agent-list"></ul>
+    <form id="agent-form" class="agent-form">
+      <input type="hidden" name="id">
+      <label><span data-i18n="f_name">Nama</span><input name="name" maxlength="40" required></label>
+      <label><span data-i18n="f_role">Peran</span><select name="role"><option value="client">Client</option><option value="supervisor">Supervisor</option><option value="worker">Worker</option></select></label>
+      <label><span data-i18n="f_provider">Provider</span><select name="provider"><option value="anthropic">anthropic (Claude SDK)</option><option value="openai">openai-compatible</option><option value="mock">mock (demo)</option></select></label>
+      <label><span data-i18n="f_model">Model</span><input name="model" placeholder="claude-opus-5-5 / nousresearch/hermes-4-405b"></label>
+      <label><span data-i18n="f_key">API key</span><input name="api_key" type="password" autocomplete="off" data-i18n-placeholder="f_key_hint" placeholder="kosongkan = tetap pakai yang tersimpan"></label>
+      <label><span data-i18n="f_base">Base URL</span><input name="base_url" placeholder="https://openrouter.ai/api/v1 · http://localhost:11434/v1"></label>
+      <label><span data-i18n="f_skills">Keahlian</span><input name="skills" data-i18n-placeholder="f_skills_hint" placeholder="dipakai supervisor saat membagi tugas"></label>
+      <label><span data-i18n="f_persona">Persona</span><textarea name="persona" rows="2" data-i18n-placeholder="f_persona_hint" placeholder="instruksi tambahan (opsional)"></textarea></label>
+      <div class="row3">
+        <label><span data-i18n="f_max">Max tokens</span><input name="max_tokens" type="number" min="256" step="256"></label>
+        <label><span data-i18n="f_effort">Effort</span><select name="effort"><option value="">default</option><option>low</option><option>medium</option><option>high</option><option>xhigh</option><option>max</option></select></label>
+        <label><span data-i18n="f_temp">Temperature</span><input name="temperature" type="number" min="0" max="2" step="0.1"></label>
+      </div>
+      <div class="row3">
+        <label><span data-i18n="f_color">Warna baju</span><input name="color" type="color"></label>
+        <label><span data-i18n="f_hair">Warna rambut</span><input name="hair" type="color"></label>
+        <label class="checkbox"><input name="clear_key" type="checkbox"> <span data-i18n="f_clear">hapus API key</span></label>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn danger" id="agent-delete" data-i18n="delete_agent">Hapus agent</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="agent-new" data-i18n="add_agent">+ Agent baru</button>
+        <button type="submit" class="btn primary" data-i18n="save">Simpan</button>
+      </div>
+      <div id="agent-error" class="error" hidden></div>
+    </form>
+  </div>
+</dialog>
+
+<template id="step-tpl"><li><span class="dot"></span><span class="title"></span><span class="meta"></span></li></template>
+<script src="/static/scene.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

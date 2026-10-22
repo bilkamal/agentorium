@@ -1,0 +1,31 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - run: pip install -r requirements.txt
+      - run: python -m compileall -q agentoffice sdk/python examples
+      - run: for f in web/*.js sdk/js/*.js; do node --check "$f"; done
+      - name: smoke test (mock agents)
+        run: |
+          cp .env.example .env
+          python -m uvicorn agentoffice.server:app --port 8000 & sleep 4
+          python - <<'PY'
+          import json, time, urllib.request
+          def call(method, path, body=None):
+              req = urllib.request.Request("http://127.0.0.1:8000" + path, data=json.dumps(body).encode() if body is not None else None, method=method, headers={"Content-Type": "application/json"})
+              return json.loads(urllib.request.urlopen(req).read() or b"null")
+          sid = call("POST", "/api/sessions", {})["id"]
+          call("POST", f"/api/sessions/{sid}/chat", {"message": "test task", "lang": "en"}); time.sleep(3)
+          call("POST", f"/api/sessions/{sid}/chat", {"message": "ok", "lang": "en"}); time.sleep(8)
+          call("POST", f"/api/sessions/{sid}/plan/approve", {"lang": "en"}); time.sleep(10)
+          s = call("GET", f"/api/sessions/{sid}")
+          assert s["stage"] == "done" and len(s["results"]) >= 1, s["stage"]
+          print("smoke test passed")
+          PY
