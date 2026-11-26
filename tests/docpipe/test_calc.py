@@ -33,3 +33,15 @@ def test_resolve_placeholder_error():
         resolve_placeholders("naik {{calc: 1 / 0 | pct:1}} persen")
     with pytest.raises(CalcError):
         resolve_placeholders("naik {{calc: 5 | bogus}}")
+
+
+def test_calc_rejects_e_notation_non_finite_and_huge_expressions():
+    for bad in ("1e20", "1e308 * 10", "+".join(["1"] * 5000)):
+        with pytest.raises(CalcError):
+            evaluate(bad)
+
+
+def test_rounding_half_up():
+    assert format_id(2.5, "num:0") == "3"
+    assert format_id(0.125, "num:2") == "0,13"
+    assert format_id(-2.5, "num:0") == "-3"

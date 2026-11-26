@@ -6,12 +6,16 @@ else 1 decimal). Output uses Indonesian number formatting (1.234,5)."""
 from __future__ import annotations
 
 import ast
+import math
 import re
+from decimal import ROUND_HALF_UP, Decimal
 
 from .consistency import _parse_number
 
 PLACEHOLDER = re.compile(r"\{\{\s*calc\s*:\s*(.*?)\s*(?:\|\s*([a-z]+(?::\d)?)?\s*)?\}\}", re.S)
 _AMBIGUOUS = re.compile(r"(?<![\d.])\d{1,3}(\.\d{3})+(?![\d.])")
+_E_NOTATION = re.compile(r"\d[eE][+-]?\d")
+MAX_NODES = 200
 
 
 class CalcError(ValueError):
@@ -23,10 +27,14 @@ def evaluate(expr: str) -> float:
         raise CalcError("rumus kosong")
     if _AMBIGUOUS.search(expr):
         raise CalcError(f"tulis angka tanpa pemisah ribuan: {expr}")
+    if _E_NOTATION.search(expr):
+        raise CalcError(f"tulis angka biasa, bukan notasi e: {expr}")
     try:
         tree = ast.parse(expr, mode="eval")
-    except SyntaxError as exc:
-        raise CalcError(f"rumus tidak valid: {expr}") from exc
+    except (SyntaxError, RecursionError, MemoryError) as exc:
+        raise CalcError(f"rumus tidak valid: {expr[:80]}") from exc
+    if sum(1 for _ in ast.walk(tree)) > MAX_NODES:
+        raise CalcError("rumus terlalu panjang")
 
     def walk(n):
         if isinstance(n, ast.Expression):
@@ -49,7 +57,28 @@ def evaluate(expr: str) -> float:
             return a / b
         raise CalcError(f"rumus hanya boleh angka dan + - * / ( ): {expr}")
 
-    return walk(tree)
+    value = walk(tree)
+    if not math.isfinite(value):
+        raise CalcError("hasil rumus tidak terhingga")
+    return value
+
+
+def literal_info(expr: str) -> list[tuple[str, bool]]:
+    """Every numeric literal (normalized) and whether it only scales: a direct operand of * or /."""
+    tree = ast.parse(expr, mode="eval")
+    scaling = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.BinOp) and isinstance(n.op, (ast.Mult, ast.Div)):
+            for side in (n.left, n.right):
+                if isinstance(side, ast.Constant):
+                    scaling.add(id(side))
+    out = []
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Constant) and isinstance(n.value, (int, float)) and not isinstance(n.value, bool):
+            v = _parse_number(str(int(n.value)) if float(n.value).is_integer() else repr(float(n.value)))
+            if v is not None:
+                out.append((v, id(n) in scaling))
+    return out
 
 
 def literals(expr: str) -> set[str]:
@@ -64,7 +93,8 @@ def format_id(value: float, fmt: str) -> str:
     if fmt and not re.fullmatch(r"(num|pct):\d", fmt):
         raise CalcError(f"format tidak dikenal: {fmt}")
     digits = int(fmt.split(":")[1]) if fmt else (0 if float(value).is_integer() else 1)
-    s = f"{abs(value):,.{digits}f}"  # 1,234,567.89
+    rounded = Decimal(repr(abs(float(value)))).quantize(Decimal(1).scaleb(-digits), rounding=ROUND_HALF_UP)
+    s = f"{rounded:,.{digits}f}"  # 1,234,567.89 — half-up, as people round
     s = s.replace(",", "_").replace(".", ",").replace("_", ".")
     negative = value < 0 and any(ch not in "0,." for ch in s)
     return ("-" if negative else "") + s

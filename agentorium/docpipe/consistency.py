@@ -37,7 +37,9 @@ def _parse_number(value: str) -> str | None:
     if not m:
         return None
     s = m.group(0).rstrip(".,")
-    if "," in s:  # Indonesian: '.' thousands, ',' decimal
+    if "," in s and "." in s and s.rfind(".") > s.rfind(","):  # English: 1,500.25
+        s = s.replace(",", "")
+    elif "," in s:  # Indonesian: '.' thousands, ',' decimal
         s = s.replace(".", "").replace(",", ".")
     elif re.fullmatch(r"-?\d{1,3}(\.\d{3})+", s):
         s = s.replace(".", "")

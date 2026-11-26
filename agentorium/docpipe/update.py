@@ -4,11 +4,13 @@ from __future__ import annotations
 import asyncio
 import csv
 import io
+import json
 import re
 from pathlib import Path
 
 from . import materials, prompts, review
-from .calc import CalcError, resolve_placeholders
+from ..config import settings
+from .calc import CalcError, literal_info, resolve_placeholders
 from .edits import MONTHS, _tokens
 from .editloop import edit_loop
 from .jobs import runner
@@ -35,11 +37,26 @@ def _cell(v) -> str:
     return str(v).strip()
 
 
-def _rows_text(label: str, rows: list[list]) -> str:
+_EN_NUM = re.compile(r"-?\d{1,3}(,\d{3})+(\.\d+)?|-?\d+\.(\d{1,2}|\d{4,})")
+_ID_NUM = re.compile(r"-?\d{1,3}(\.\d{3})+(,\d+)?|-?\d+,\d+")
+
+
+def _english_cells(rows: list[list[str]]) -> bool:
+    """A CSV written with English number formatting (1,500.25 / 0.15) rather than Indonesian (1.500,25 / 0,15)."""
+    cells = [c.strip() for r in rows for c in r if c and c.strip()]
+    en = sum(bool(_EN_NUM.fullmatch(c)) for c in cells)
+    idn = sum(bool(_ID_NUM.fullmatch(c)) for c in cells)
+    return en > idn
+
+
+def _rows_text(label: str, rows: list[list]) -> tuple[str, set[str]]:
     rows = [[_cell(c) for c in r] for r in rows]
     rows = [r for r in rows if any(r)]
     if not rows:
-        return ""
+        return "", set()
+    if _english_cells(rows):
+        rows = [[_cell(float(c.replace(",", ""))) if _EN_NUM.fullmatch(c.strip()) else c for c in r] for r in rows]
+    numbers = set().union(*(_tokens(c) for r in rows for c in r))  # cell values only: not row numbers or labels
     header = rows[0]
     has_header = all(h and _parse_free(h) for h in header if h)
     out = []
@@ -47,7 +64,7 @@ def _rows_text(label: str, rows: list[list]) -> str:
         cells = [(f"{header[j]}=" if has_header and j < len(header) and header[j] else "") + c
                  for j, c in enumerate(r) if c]
         out.append(f"{label}baris {i}: " + " | ".join(cells))
-    return "\n".join(out)
+    return "\n".join(out), numbers
 
 
 def _parse_free(h: str) -> bool:
@@ -64,55 +81,65 @@ def extract_data(filename: str, data: bytes) -> list[dict]:
             import openpyxl
 
             wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True, read_only=True)
-            text = "\n".join(t for t in (_rows_text(f"{ws.title} ", [list(r) for r in ws.iter_rows(values_only=True)])
-                                         for ws in wb.worksheets) if t)
+            parts = [_rows_text(f"{ws.title} ", [list(r) for r in ws.iter_rows(values_only=True)]) for ws in wb.worksheets]
+            text = "\n".join(t for t, _ in parts if t)
+            numbers = set().union(*(n for _, n in parts)) if parts else set()
         elif ext == ".csv":
             raw = data.decode("utf-8-sig", errors="replace")
-            dialect = csv.Sniffer().sniff(raw[:2048], delimiters=",;\t") if raw.strip() else csv.excel
-            text = _rows_text("", list(csv.reader(io.StringIO(raw), dialect)))
+            try:
+                dialect = csv.Sniffer().sniff(raw[:2048], delimiters=",;\t")
+            except csv.Error:  # one column, or no clear delimiter
+                dialect = csv.excel
+            text, numbers = _rows_text("", list(csv.reader(io.StringIO(raw), dialect)))
         else:
             text = materials.material_text(filename, data)
+            numbers = _tokens(text)
     except ValueError:
         raise
     except Exception as exc:
         raise ValueError(f"Berkas data {filename} rusak atau tidak bisa dibaca: {exc}") from exc
-    return [{"name": filename, "text": text, "numbers": sorted(_tokens(text))}]
+    return [{"name": filename, "text": text, "numbers": sorted(numbers)}]
 
 
-def data_for_section(sources: list[dict], section_text: str, limit: int = MAX_DATA_CHARS) -> str:
-    """All data when it fits; otherwise the lines sharing the most words with the section."""
+def data_for_section(sources: list[dict], section_text: str, period: str = "", limit: int = MAX_DATA_CHARS) -> str:
+    """All data when it fits; otherwise the lines most relevant to the section, new-period lines first, with a note
+    that the data was cut."""
     full = "\n\n".join(f"[{s['name']}]\n{s['text']}" for s in sources)
     if len(full) <= limit:
         return full
-    words = {w for w in re.findall(r"\w{3,}", section_text.lower())}
+    note = ("DATA DIPOTONG: data terlalu panjang, yang ditampilkan hanya baris paling relevan untuk bagian ini. "
+            "Angka yang tidak ada di sini jangan ditebak — masukkan bloknya ke skipped.")
     lines = [(s["name"], ln) for s in sources for ln in s["text"].splitlines() if ln.strip()]
-    ranked = sorted(lines, key=lambda x: -len(words & set(re.findall(r"\w{3,}", x[1].lower()))))
-    out, size = [], 0
-    for name, ln in ranked:
-        if size + len(ln) > limit:
-            break
-        out.append(f"[{name}] {ln}")
-        size += len(ln) + 1
-    return "\n".join(out)
+    toks = [set(re.findall(r"\w{3,}", ln.lower())) for _, ln in lines]
+    common = {w for w in set().union(*toks) if sum(w in t for t in toks) > len(toks) / 2}  # sheet names, labels
+    words = set(re.findall(r"\w{3,}", section_text.lower())) - common
+    period_words = set(re.findall(r"\w{3,}", period.lower()))
+    order = sorted(range(len(lines)), key=lambda i: (-(5 * len(period_words & toks[i]) + len(words & toks[i])), i))
+    picked, size = set(), len(note) + 1
+    for i in order:
+        cost = len(lines[i][0]) + len(lines[i][1]) + 4
+        if size + cost > limit:
+            continue
+        picked.add(i)
+        size += cost
+    return "\n".join([note] + [f"[{lines[i][0]}] {lines[i][1]}" for i in sorted(picked)])
 
 
 _SCALE = {"ribu": 1e3, "juta": 1e6, "miliar": 1e9, "milyar": 1e9, "triliun": 1e12}
 _SCALED = re.compile(r"(\d[\d.,]*)\s*(ribu|juta|miliar|milyar|triliun)\b", re.I)
 
 
-def _scaled_ok(text: str, known: set[str]) -> set[str]:
-    """Numbers written with a unit word ("286 juta") that equal a data value (286000000): a unit, not a derivation."""
+def _without_scaled_data(text: str, known: set[str]) -> str:
+    """Remove "286 juta" where 286 × 10^6 is a data value: a unit, not a derivation. Only that span is excused."""
     from .consistency import _parse_number
 
-    ok = set()
-    for m in _SCALED.finditer(text):
+    def repl(m):
         n = _parse_number(m.group(1))
-        if n is None:
-            continue
-        full = _parse_number(str(round(float(n) * _SCALE[m.group(2).lower()])))
-        if full in known:
-            ok.add(n)
-    return ok
+        if n is not None and _parse_number(str(round(float(n) * _SCALE[m.group(2).lower()]))) in known:
+            return " "
+        return m.group(0)
+
+    return _SCALED.sub(repl, text)
 
 
 def _constant(x: str) -> bool:
@@ -126,9 +153,15 @@ def check_update_edit(old: str, e: dict, known: set[str], *, doc_tokens: set[str
         text, formulas, lits = resolve_placeholders(e["new_text"])
     except CalcError as exc:
         return f"rumus tidak valid: {exc}"
-    unknown_lits = sorted(x for x in lits - known - doc_tokens - _tokens(old) if not _constant(x))
-    if unknown_lits:
-        return f"angka dalam rumus tanpa sumber: {', '.join(unknown_lits)}"
+    old_t = _tokens(old)
+    for f in formulas:
+        info = literal_info(f["expr"])
+        sourced = [v for v, scales in info if not (scales and _constant(v))]  # constants may only scale
+        unknown = sorted({v for v in sourced if v not in known | doc_tokens | old_t})
+        if unknown:
+            return f"angka dalam rumus tanpa sumber: {', '.join(unknown)}"
+        if not any(v in known or v in old_t for v in sourced):
+            return f"rumus harus memakai angka dari data atau dari blok ini: {f['expr']}"
     e["new_text"] = text
     if formulas:
         e["formulas"] = formulas
@@ -138,7 +171,7 @@ def check_update_edit(old: str, e: dict, known: set[str], *, doc_tokens: set[str
     if not text.strip() or not 0.3 <= ratio <= 3.0:
         return "teks baru kosong atau panjangnya berubah terlalu jauh"
     values = {v for f in formulas for v in _tokens(f["value"])}
-    added = sorted(_tokens(text) - _tokens(old) - known - values - _scaled_ok(text, known))
+    added = sorted(_tokens(_without_scaled_data(text, known)) - old_t - known - values)
     if added:
         return f"angka/tanggal tanpa sumber di data: {', '.join(added)}"
     return None
@@ -160,11 +193,23 @@ async def start_update(version_id: str, *, period_label: str, files: list[tuple[
         raise ValueError("Data periode baru kosong: unggah minimal satu berkas data (xlsx, csv, docx, pdf, txt)")
     ensure_idle(store, version.id)  # again: the awaits above let another request in
     job = store.create_job(version.document_id, version.id, "update",
-                           {"period_label": period_label.strip(), "notes": notes.strip()[:5000], "sources": sources})
+                           {"period_label": period_label.strip(), "notes": notes.strip()[:5000],
+                            "source_names": [s["name"] for s in sources]})
+    _sources_path(job).parent.mkdir(parents=True, exist_ok=True)
+    _sources_path(job).write_text(json.dumps(sources, ensure_ascii=False))
     store.add_tasks(job.id, [(sid, ids, "update_section") for sid, ids in
                              plan_tasks(store.get_sections(version.id), store.get_blocks(version.id))])
     await runner.start(job.id)
     return store.get_job(job.id)
+
+
+def _sources_path(job: Job) -> Path:
+    # inside the document folder, so deleting the document removes it
+    return settings.data_dir / "docs" / job.document_id / "jobs" / f"{job.id}.sources.json"
+
+
+def load_sources(job: Job) -> list[dict]:
+    return json.loads(_sources_path(job).read_text())
 
 
 async def update_task(job: Job, task: Task) -> dict:
@@ -176,8 +221,8 @@ async def update_task(job: Job, task: Task) -> dict:
     blocks = [b for b in store.get_blocks(job.version_id, section_id=task.section_id) if b.id in ids]
     blocks_by_id = {b.id: b for b in blocks}
     period = job.params["period_label"]
-    sources = job.params["sources"]
-    data_text = data_for_section(sources, section.path + " " + " ".join(b.text for b in blocks))
+    sources = await asyncio.to_thread(load_sources, job)
+    data_text = data_for_section(sources, section.path + " " + " ".join(b.text for b in blocks), period)
     all_text = [b.text for b in store.get_blocks(job.version_id)]
     doc_tokens = set().union(*(_tokens(t) for t in all_text)) if all_text else set()
     known = {n for s in sources for n in s["numbers"]} | _tokens(period) | {t for t in doc_tokens if t in MONTHS}
