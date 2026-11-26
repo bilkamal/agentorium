@@ -155,3 +155,31 @@ async def review_task(job: Job, task: Task) -> dict:
 
 
 runner.register("section_review", review_task)
+
+
+async def start_review(version_id: str, categories: list[str] | None = None) -> Job:
+    """Create a review job for a ready version (indexing it first if needed) and start it."""
+    from .index import index_version
+
+    store = get_store()
+    version = store.get_version(version_id)
+    if version is None or version.status != "ready":
+        raise ValueError("versi belum siap direview")
+    pick_agents()  # fail fast when the team is incomplete
+    if version.index_status not in ("ready", "fts_only"):
+        await asyncio.to_thread(index_version, store, version_id)
+    cats = [c for c in (categories or CATEGORIES) if c in CATEGORIES] or list(CATEGORIES)
+    plan = plan_tasks(store.get_sections(version_id), store.get_blocks(version_id))
+    job = store.create_job(version.document_id, version_id, "review", {"categories": cats})
+    store.add_tasks(job.id, [(sid, bids, "section_review") for sid, bids in plan])
+    await runner.start(job.id)
+    return store.get_job(job.id)
+
+
+async def _finalize_review(job: Job) -> None:
+    from .consistency import check_consistency
+
+    await check_consistency(job)
+
+
+runner.register_finalizer("review", _finalize_review)
