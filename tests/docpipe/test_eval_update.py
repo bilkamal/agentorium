@@ -18,3 +18,4 @@ def test_score_update():
     r = ev.score_update(text, old_text="Laporan bulan Oktober 2026.")
     assert r["expected_found"]["penjualan_286"] and r["expected_found"]["growth_10"]
     assert r["period_mentioned"] and not r["expected_found"]["responden_130"]
+    assert ev.score_update("naik 10,0 persen", old_text="")["expected_found"]["growth_10"]

@@ -91,7 +91,20 @@ Panel **Update berkala**: isi periode baru (mis. *November 2026*), unggah data (
 - **Angka turunan dihitung mesin, bukan LLM**: worker menulis `{{calc: (286000000 - 260000000) / 260000000 * 100 | pct:1}}`, kalkulator (hanya + − × ÷ dan kurung, tanpa `eval`) menghitung dan memformat gaya Indonesia (`10,0`). Rumusnya tercatat di kolom alasan tabel Perubahan. Angka di dalam rumus harus berasal dari data atau laporan lama (kecuali pengali 10/100/1.000.000… dan bilangan kecil 1–12).
 - **Setiap angka baru wajib punya sumber**: dari data, dari hasil rumus, atau sudah ada di blok itu. Yang tidak → blok **ditahan** (tetap teks lama, status *perlu dicek* dengan alasannya). Blok yang datanya tidak ada juga ditahan dengan alasan "ditahan: …".
 - Supervisor memeriksa setiap edit terhadap data yang sama sebelum diterapkan.
+- Angka bersatuan yang sama dengan data dikenali langsung: "Rp 286 juta" = 286.000.000 (ribu, juta, miliar, triliun).
 - Menambah/menghapus baris tabel belum didukung (hanya isi sel yang diubah).
+
+### Hasil uji update berkala
+
+Laporan uji Oktober 2026 + `data-november.xlsx` (indikator Oktober vs November, jadwal kegiatan) → periode *November 2026*, Claude Code `haiku`, lewat UI (26 Nov 2026):
+
+| Ukuran | Hasil |
+|---|---|
+| Nilai kunci November di versi baru | **7/7** (Rp 286 juta, naik 10,0 persen, 130 responden, 85 persen puas, Rp 600 juta, 11 November 2026, 20 karyawan) |
+| Angka turunan dari kalkulator | naik 10,0 persen · realisasi 98,3 persen dari anggaran · naik 3 poin |
+| Perubahan | 12 diterapkan · 2 ditahan (data kunjungan dan durasi pelatihan tidak ada di data) |
+| Struktur blok | sama dengan versi asal |
+| Durasi | ±1,5 menit untuk 7 bab |
 
 ## Bandingkan versi
 

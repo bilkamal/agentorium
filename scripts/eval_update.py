@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT))
 PERIOD = "November 2026"
 EXPECTED = {  # name → text that must appear in the November report
     "penjualan_286": "286 juta",
-    "growth_10": "10 persen",
+    "growth_10": ("10 persen", "10,0 persen"),
     "responden_130": "130 responden",
     "puas_85": "85 persen",
     "anggaran_600": "600 juta",
@@ -52,7 +52,10 @@ def data_xlsx() -> bytes:
 
 
 def score_update(new_text: str, *, old_text: str) -> dict:
-    return {"expected_found": {k: v in new_text for k, v in EXPECTED.items()},
+    def found(v):
+        return any(x in new_text for x in (v if isinstance(v, tuple) else (v,)))
+
+    return {"expected_found": {k: found(v) for k, v in EXPECTED.items()},
             "period_mentioned": PERIOD in new_text,
             "old_period_left": new_text.count("Oktober 2026")}
 
