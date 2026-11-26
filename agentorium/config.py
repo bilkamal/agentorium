@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
-PROVIDERS = ("anthropic", "openai", "mock")
+PROVIDERS = ("anthropic", "openai", "claude_code", "mock")
 
 
 def env_agent(agent: str, field: str, default: str | None = None) -> str | None:
@@ -39,6 +39,11 @@ class Settings:
     data_dir: Path
     lang: str          # "id" | "en": default UI language, mock replies, system notes
     api_token: str     # optional shared secret for the external events API ("" = open)
+    llm_concurrency: int  # max simultaneous claude_code calls
+    claude_bin: str       # path/name of the Claude Code CLI
+    claude_timeout: int   # seconds before a claude_code call is killed
+    embed_model: str      # fastembed model for document search ("none" = keyword search only)
+    rate_limit_wait: int  # seconds a paused job waits after a usage limit before retrying
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -51,6 +56,11 @@ class Settings:
             data_dir=Path(os.getenv("OFFICE_DATA_DIR", str(ROOT / "data"))),
             lang=(os.getenv("OFFICE_LANG", "id").strip().lower() or "id"),
             api_token=os.getenv("OFFICE_API_TOKEN", "").strip(),
+            llm_concurrency=max(1, int(os.getenv("OFFICE_LLM_CONCURRENCY", "2"))),
+            claude_bin=os.getenv("OFFICE_CLAUDE_BIN", "claude").strip() or "claude",
+            claude_timeout=int(os.getenv("OFFICE_CLAUDE_TIMEOUT", "1800")),
+            embed_model=os.getenv("OFFICE_EMBED_MODEL", "intfloat/multilingual-e5-large").strip() or "none",
+            rate_limit_wait=int(os.getenv("OFFICE_RATE_LIMIT_WAIT", "900")),
         )
 
 

@@ -9,6 +9,10 @@
 <body>
 <header class="topbar">
   <div class="brand"><span class="logo">⌂</span> Agentorium <small data-i18n="tagline">visualisasi multi-agent</small></div>
+  <nav class="view-tabs" role="tablist">
+    <button id="tab-office" class="btn small active" role="tab" data-view="office">Kantor</button>
+    <button id="tab-docs" class="btn small" role="tab" data-view="docs">Dokumen</button>
+  </nav>
   <div class="agents" id="agent-chips"></div>
   <div class="session-controls">
     <select id="session-select" title="Session"></select>
@@ -71,6 +75,136 @@
   </section>
 </main>
 
+<main id="docs-view" class="docs-layout" hidden>
+  <section class="panel docs-list">
+    <div class="panel-head"><h2 data-d="documents">Dokumen</h2></div>
+    <form id="docs-upload" class="docs-upload">
+      <input type="file" id="docs-file" accept=".docx,.pdf" required>
+      <input type="text" id="docs-title" data-dp="title_ph" placeholder="Judul (opsional)">
+      <input type="text" id="docs-label" data-dp="label_ph" placeholder="Label, mis. laporan bulanan (opsional)">
+      <button type="submit" class="btn primary" data-d="upload">Unggah DOCX/PDF</button>
+    </form>
+    <div id="docs-error" class="error" hidden></div>
+    <ul id="docs-items" class="docs-items"></ul>
+  </section>
+  <section class="panel docs-detail">
+    <div class="panel-head"><h2 id="doc-title" data-d="pick">Pilih dokumen</h2><span id="doc-label" class="tag" hidden></span></div>
+    <div id="doc-body" class="doc-body" hidden>
+      <div class="doc-actions">
+        <label class="btn"><span data-d="new_version">Unggah versi baru</span><input type="file" id="doc-new-version" accept=".docx,.pdf" hidden></label>
+        <button id="doc-delete" class="btn danger" data-d="delete_doc">Hapus dokumen</button>
+      </div>
+      <h3 data-d="versions">Versi</h3>
+      <div class="table-wrap"><table class="doc-versions"><thead><tr>
+        <th>#</th><th data-d="source">Sumber</th><th data-d="time">Waktu</th><th data-d="status">Status</th><th data-d="note">Catatan</th><th></th>
+      </tr></thead><tbody id="doc-versions"></tbody></table></div>
+      <section class="review-box">
+        <h3 data-d="review">Review</h3>
+        <div class="review-cats">
+          <label><input type="checkbox" name="review-cat" value="language" checked> <span data-d="cat_language">Bahasa</span></label>
+          <label><input type="checkbox" name="review-cat" value="consistency" checked> <span data-d="cat_consistency">Konsistensi</span></label>
+          <label><input type="checkbox" name="review-cat" value="structure" checked> <span data-d="cat_structure">Struktur</span></label>
+          <label><input type="checkbox" name="review-cat" value="substance" checked> <span data-d="cat_substance">Substansi</span></label>
+        </div>
+        <div class="review-bar">
+          <button id="doc-review" class="btn primary" data-d="review_start">Review versi ini</button>
+          <span id="review-status" class="muted"></span>
+          <button id="review-cancel" class="btn small" data-d="cancel" hidden>Batalkan</button>
+          <button id="review-office" class="btn small" data-d="see_office" hidden>Lihat di Kantor</button>
+        </div>
+        <ul id="review-progress" class="review-progress"></ul>
+        <div id="findings-box" hidden>
+          <div class="findings-head">
+            <b data-d="findings">Temuan</b> <span id="findings-counts" class="muted"></span>
+            <span class="spacer"></span>
+            <select id="findings-cat"><option value="" data-d="all_categories">Semua kategori</option>
+              <option value="language" data-d="cat_language">Bahasa</option><option value="consistency" data-d="cat_consistency">Konsistensi</option>
+              <option value="structure" data-d="cat_structure">Struktur</option><option value="substance" data-d="cat_substance">Substansi</option></select>
+            <select id="findings-status"><option value="valid" data-d="fs_valid">Valid</option><option value="needs_human" data-d="fs_needs_human">Perlu dicek</option>
+              <option value="rejected" data-d="fs_rejected">Ditolak</option><option value="" data-d="all_status">Semua status</option></select>
+          </div>
+          <div class="table-wrap"><table id="findings-table" class="findings-table"><thead><tr>
+            <th data-d="col_category">Kategori</th><th data-d="col_severity">Tingkat</th><th data-d="col_location">Lokasi</th>
+            <th data-d="col_quote">Kutipan</th><th data-d="col_problem">Masalah</th><th data-d="col_suggestion">Saran</th>
+          </tr></thead><tbody id="findings-rows"></tbody></table></div>
+        </div>
+      </section>
+      <section class="review-box" id="revision-box">
+        <h3 data-d="revision">Revisi</h3>
+        <div class="review-bar">
+          <button id="doc-revise" class="btn primary" data-d="revise_auto" disabled>Revisi otomatis dari temuan</button>
+          <span class="muted" data-d="revise_hint">Bahasa, konsistensi, dan struktur diperbaiki; substansi jadi saran.</span>
+        </div>
+        <details id="materials-box" class="materials">
+          <summary data-d="materials_title">Revisi dari bahan revisi (catatan, berkas, komentar Word)</summary>
+          <form id="materials-form" class="materials-form">
+            <textarea id="rev-notes" rows="4" data-dp="notes_ph" placeholder="Tempel catatan revisi dari atasan/klien…"></textarea>
+            <label class="btn small"><span data-d="material_files">Pilih berkas bahan (txt, md, docx, pdf)</span>
+              <input type="file" id="rev-files" accept=".txt,.md,.docx,.pdf" multiple hidden></label>
+            <span id="rev-files-names" class="muted"></span>
+            <label><input type="checkbox" id="rev-comments" checked> <span data-d="use_comments">Pakai komentar Word di dokumen ini</span></label>
+            <button type="submit" id="rev-start" class="btn primary" data-d="materials_start">Mulai revisi dari bahan</button>
+          </form>
+        </details>
+        <details id="update-box" class="materials">
+          <summary data-d="update_title">Update berkala (laporan periode baru dari data baru)</summary>
+          <form id="update-form" class="materials-form">
+            <input type="text" id="upd-period" data-dp="period_ph" placeholder="Periode baru, mis. November 2026" required>
+            <label class="btn small"><span data-d="update_files">Pilih berkas data (xlsx, csv, docx, pdf, txt)</span>
+              <input type="file" id="upd-files" accept=".xlsx,.csv,.docx,.pdf,.txt,.md" multiple hidden></label>
+            <span id="upd-files-names" class="muted"></span>
+            <textarea id="upd-notes" rows="2" data-dp="update_notes_ph" placeholder="Catatan tambahan (opsional), mis. fokus ke penjualan"></textarea>
+            <button type="submit" id="upd-start" class="btn primary" data-d="update_start">Mulai update</button>
+          </form>
+        </details>
+        <div class="review-bar">
+          <span id="rev-status" class="muted"></span>
+          <button id="rev-cancel" class="btn small" data-d="cancel" hidden>Batalkan</button>
+          <button id="rev-office" class="btn small" data-d="see_office" hidden>Lihat di Kantor</button>
+        </div>
+        <ul id="rev-progress" class="review-progress"></ul>
+        <div id="rev-result" class="rev-result" hidden></div>
+        <div id="followup-box" hidden>
+          <div class="findings-head"><b data-d="followup">Tindak lanjut</b> <span id="followup-counts" class="muted"></span>
+            <span class="spacer"></span><a id="followup-download" class="btn small" data-d="followup_download">Unduh tabel tindak lanjut (DOCX)</a></div>
+          <div class="table-wrap"><table id="followup-table" class="findings-table"><thead><tr>
+            <th>No</th><th data-d="col_source">Sumber</th><th data-d="col_instruction">Instruksi</th><th data-d="status">Status</th>
+            <th data-d="col_response">Tanggapan</th><th data-d="col_location">Lokasi</th>
+          </tr></thead><tbody id="followup-rows"></tbody></table></div>
+        </div>
+        <div id="changes-box" hidden>
+          <div class="findings-head"><b data-d="changes">Perubahan</b> <span id="changes-counts" class="muted"></span></div>
+          <div class="table-wrap"><table id="changes-table" class="findings-table"><thead><tr>
+            <th data-d="col_location">Lokasi</th><th data-d="col_change">Perubahan</th>
+            <th data-d="col_reason">Alasan / catatan</th><th data-d="status">Status</th>
+          </tr></thead><tbody id="changes-rows"></tbody></table></div>
+        </div>
+      </section>
+      <section class="review-box" id="compare-box">
+        <h3 data-d="compare">Bandingkan versi</h3>
+        <form id="compare-form" class="review-bar">
+          <select id="cmp-a"></select> <span>→</span> <select id="cmp-b"></select>
+          <button type="submit" class="btn" data-d="compare_go">Bandingkan</button>
+          <a id="cmp-redline" class="btn small" data-d="compare_redline" hidden>Unduh redline (DOCX)</a>
+        </form>
+        <div id="cmp-summary" class="muted"></div>
+        <div class="table-wrap"><table id="cmp-table" class="findings-table" hidden><thead><tr>
+          <th data-d="status">Status</th><th data-d="col_location">Lokasi</th><th data-d="col_change">Perubahan</th>
+        </tr></thead><tbody id="cmp-rows"></tbody></table></div>
+      </section>
+      <h3><span data-d="outline">Outline</span> <small id="outline-version" class="muted"></small></h3>
+      <ul id="doc-outline" class="doc-outline"></ul>
+      <div id="doc-blocks" class="doc-blocks" hidden></div>
+      <h3 data-d="search_title">Cari di dokumen (uji RAG)</h3>
+      <form id="doc-search" class="doc-search">
+        <input type="search" id="doc-search-q" data-dp="search_ph" placeholder="mis. jumlah responden" required>
+        <button type="submit" class="btn" data-d="search">Cari</button>
+      </form>
+      <ul id="search-results" class="search-results"></ul>
+    </div>
+  </section>
+</main>
+
 <dialog id="settings" class="dialog wide">
   <div class="dialog-head"><h3 data-i18n="settings">Pengaturan tim</h3><button type="button" class="btn ghost" id="settings-close">✕</button></div>
   <p class="hint" data-i18n="settings_hint">Satu client (bicara dengan Anda), satu supervisor (merencanakan &amp; meninjau), dan berapa pun worker. Setiap agent punya provider, model, dan API key sendiri.</p>
@@ -80,7 +214,7 @@
       <input type="hidden" name="id">
       <label><span data-i18n="f_name">Nama</span><input name="name" maxlength="40" required></label>
       <label><span data-i18n="f_role">Peran</span><select name="role"><option value="client">Client</option><option value="supervisor">Supervisor</option><option value="worker">Worker</option></select></label>
-      <label><span data-i18n="f_provider">Provider</span><select name="provider"><option value="anthropic">anthropic (Claude SDK)</option><option value="openai">openai-compatible</option><option value="mock">mock (demo)</option></select></label>
+      <label><span data-i18n="f_provider">Provider</span><select name="provider"><option value="anthropic">anthropic (Claude SDK)</option><option value="openai">openai-compatible</option><option value="claude_code">claude_code (langganan Claude Code)</option><option value="mock">mock (demo)</option></select></label>
       <label><span data-i18n="f_model">Model</span><input name="model" placeholder="claude-opus-5-5 / nousresearch/hermes-4-405b"></label>
       <label><span data-i18n="f_key">API key</span><input name="api_key" type="password" autocomplete="off" data-i18n-placeholder="f_key_hint" placeholder="kosongkan = tetap pakai yang tersimpan"></label>
       <label><span data-i18n="f_base">Base URL</span><input name="base_url" placeholder="https://openrouter.ai/api/v1 · http://localhost:11434/v1"></label>
@@ -110,5 +244,7 @@
 <template id="step-tpl"><li><span class="dot"></span><span class="title"></span><span class="meta"></span></li></template>
 <script src="/static/scene.js"></script>
 <script src="/static/app.js"></script>
+<script src="/static/worddiff.js"></script>
+<script src="/static/docs.js"></script>
 </body>
 </html>
