@@ -10,6 +10,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from ..config import settings
+from .index import schedule_index
 from .models import Version
 from .service import MAX_UPLOAD_BYTES, IngestError, ingest, restore, version_file
 from .store import get_store
@@ -49,6 +50,7 @@ async def upload_document(file: UploadFile = File(...), title: str | None = Form
     data = await _read_upload(file)
     doc, version = await _ingest(filename=file.filename or "upload", data=data, title=(title or "").strip() or None,
                                  label=label.strip())
+    schedule_index(version.id)
     return {"document": asdict(doc), "version": _version_json(version)}
 
 
@@ -86,6 +88,7 @@ async def upload_version(doc_id: str, file: UploadFile = File(...), note: str = 
         raise HTTPException(404, "dokumen tidak ditemukan")
     data = await _read_upload(file)
     _, version = await _ingest(filename=file.filename or "upload", data=data, document_id=doc_id, note=note.strip())
+    schedule_index(version.id)
     return {"version": _version_json(version)}
 
 
@@ -126,4 +129,5 @@ async def restore_version(version_id: str):
         version = await asyncio.to_thread(restore, get_store(), version_id)
     except IngestError as exc:
         raise HTTPException(422, str(exc)) from exc
+    schedule_index(version.id)
     return {"version": _version_json(version)}

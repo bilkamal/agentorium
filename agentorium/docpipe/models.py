@@ -58,3 +58,16 @@ class Version:
     warnings: list[str]
     note: str
     created_at: float
+    index_status: str = "none"  # none | indexing | ready | fts_only | failed
+    index_error: str | None = None
+
+
+@dataclass
+class Chunk:
+    id: str
+    version_id: str
+    section_id: str
+    block_ids: list[str]
+    heading_path: str
+    content: str
+    ordinal: int

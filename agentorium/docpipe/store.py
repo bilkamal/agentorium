@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import threading
 import time
@@ -10,7 +11,9 @@ from dataclasses import asdict
 from pathlib import Path
 
 from ..config import settings
-from .models import Block, Document, ParsedDoc, Section, Version
+import numpy as np
+
+from .models import Block, Chunk, Document, ParsedDoc, Section, Version
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY, title TEXT NOT NULL, label TEXT NOT NULL DEFAULT '',
@@ -27,9 +30,19 @@ CREATE TABLE IF NOT EXISTS blocks(id TEXT NOT NULL, version_id TEXT NOT NULL REF
   table_index INTEGER, row INTEGER, col INTEGER, PRIMARY KEY(version_id, id));
 CREATE INDEX IF NOT EXISTS blocks_by_section ON blocks(version_id, section_id, ordinal);
 CREATE INDEX IF NOT EXISTS blocks_by_uid ON blocks(uid);
+-- phase2
+CREATE TABLE IF NOT EXISTS chunks(id TEXT PRIMARY KEY, version_id TEXT NOT NULL REFERENCES versions(id) ON DELETE CASCADE,
+  section_id TEXT NOT NULL, block_ids TEXT NOT NULL, heading_path TEXT NOT NULL, content TEXT NOT NULL, ordinal INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS chunks_by_version ON chunks(version_id, ordinal);
+CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(content, chunk_id UNINDEXED, version_id UNINDEXED,
+  tokenize='unicode61 remove_diacritics 2');
+CREATE TABLE IF NOT EXISTS chunk_vectors(chunk_id TEXT PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
+  version_id TEXT NOT NULL, dim INTEGER NOT NULL, vec BLOB NOT NULL);
 """
 
-VERSION_FIELDS = ("status", "error", "warnings", "original_path", "file_path", "note")
+MIGRATIONS = {"versions": [("index_status", "TEXT NOT NULL DEFAULT 'none'"), ("index_error", "TEXT")]}
+
+VERSION_FIELDS = ("status", "error", "warnings", "original_path", "file_path", "note", "index_status", "index_error")
 
 
 def _new_id() -> str:
@@ -45,6 +58,12 @@ class Store:
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA foreign_keys=ON")
         self._db.executescript(SCHEMA)
+        for table, cols in MIGRATIONS.items():
+            have = {r[1] for r in self._db.execute(f"PRAGMA table_info({table})")}
+            for name, decl in cols:
+                if name not in have:
+                    self._db.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+        self._db.commit()
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------ documents
@@ -70,6 +89,8 @@ class Store:
 
     def delete_document(self, document_id: str) -> bool:
         with self._lock, self._db:
+            self._db.execute("DELETE FROM chunks_fts WHERE version_id IN (SELECT id FROM versions WHERE document_id=?)",
+                             (document_id,))
             cur = self._db.execute("DELETE FROM documents WHERE id=?", (document_id,))
         return cur.rowcount > 0
 
@@ -123,6 +144,7 @@ class Store:
 
     def delete_version(self, version_id: str) -> None:
         with self._lock, self._db:
+            self._db.execute("DELETE FROM chunks_fts WHERE version_id=?", (version_id,))
             self._db.execute("DELETE FROM versions WHERE id=?", (version_id,))
 
     # ------------------------------------------------------------ structure
@@ -152,6 +174,46 @@ class Store:
             args += (section_id,)
         rows = self._db.execute(sql + " ORDER BY ordinal", args).fetchall()
         return [Block(**dict(r)) for r in rows]
+
+
+    # --------------------------------------------------------------- chunks
+    def save_chunks(self, version_id: str, chunks: list[Chunk]) -> None:
+        with self._lock, self._db:
+            self._db.execute("DELETE FROM chunks_fts WHERE version_id=?", (version_id,))
+            self._db.execute("DELETE FROM chunks WHERE version_id=?", (version_id,))
+            self._db.executemany(
+                "INSERT INTO chunks(id,version_id,section_id,block_ids,heading_path,content,ordinal) VALUES(?,?,?,?,?,?,?)",
+                [(c.id, version_id, c.section_id, json.dumps(c.block_ids), c.heading_path, c.content, c.ordinal)
+                 for c in chunks])
+            self._db.executemany("INSERT INTO chunks_fts(content,chunk_id,version_id) VALUES(?,?,?)",
+                                 [(c.content, c.id, version_id) for c in chunks])
+
+    def get_chunks(self, version_id: str) -> list[Chunk]:
+        rows = self._db.execute("SELECT * FROM chunks WHERE version_id=? ORDER BY ordinal", (version_id,)).fetchall()
+        return [Chunk(**{**dict(r), "block_ids": json.loads(r["block_ids"])}) for r in rows]
+
+    def save_vectors(self, version_id: str, chunk_ids: list[str], matrix: np.ndarray) -> None:
+        m = np.asarray(matrix, dtype=np.float32)
+        with self._lock, self._db:
+            self._db.execute("DELETE FROM chunk_vectors WHERE version_id=?", (version_id,))
+            self._db.executemany("INSERT INTO chunk_vectors(chunk_id,version_id,dim,vec) VALUES(?,?,?,?)",
+                                 [(cid, version_id, m.shape[1], m[i].tobytes()) for i, cid in enumerate(chunk_ids)])
+
+    def load_vectors(self, version_id: str) -> tuple[list[str], np.ndarray]:
+        rows = self._db.execute("SELECT v.chunk_id, v.dim, v.vec FROM chunk_vectors v JOIN chunks c ON c.id=v.chunk_id "
+                                "WHERE v.version_id=? ORDER BY c.ordinal", (version_id,)).fetchall()
+        if not rows:
+            return [], np.zeros((0, 0), dtype=np.float32)
+        return [r[0] for r in rows], np.vstack([np.frombuffer(r[2], dtype=np.float32) for r in rows])
+
+    def fts_search(self, version_id: str, query: str, limit: int) -> list[str]:
+        tokens = re.findall(r"\w+", query.lower())
+        if not tokens:
+            return []
+        match = " OR ".join(f'"{t}"' for t in dict.fromkeys(tokens))
+        rows = self._db.execute("SELECT chunk_id FROM chunks_fts WHERE chunks_fts MATCH ? AND version_id=? "
+                                "ORDER BY bm25(chunks_fts) LIMIT ?", (match, version_id, limit)).fetchall()
+        return [r[0] for r in rows]
 
 
 _store: Store | None = None
