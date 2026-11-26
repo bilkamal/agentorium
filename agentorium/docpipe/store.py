@@ -400,6 +400,11 @@ class Store:
         rows = self._db.execute(q + " ORDER BY ordinal", args).fetchall()
         return [Finding(**{k: r[k] for k in r.keys() if k != "ordinal"}) for r in rows]
 
+    def delete_job_level_findings(self, job_id: str) -> None:
+        """Findings not tied to a section task (the cross-section consistency pass)."""
+        with self._db:
+            self._db.execute("DELETE FROM findings WHERE job_id=? AND task_id IS NULL", (job_id,))
+
     def count_findings(self, job_id: str) -> dict[str, int]:
         rows = self._db.execute("SELECT status, COUNT(*) FROM findings WHERE job_id=? GROUP BY status", (job_id,))
         return {r[0]: r[1] for r in rows}

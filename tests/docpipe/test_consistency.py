@@ -131,7 +131,8 @@ def test_check_consistency_skips_conflict_already_reported_by_worker(tmp_setting
                           value="120", unit="orang", quote="120"),
                      dict(job_id=job.id, version_id=v.id, block_id="b00009", kind="number", key="jumlah responden",
                           value="125", unit="orang", quote="125")])
-    store.add_findings([dict(job_id=job.id, task_id=None, version_id=v.id, block_id="b00009", other_block_id=None,
+    task = store.add_tasks(job.id, [("s0003", ["b00009"], "section_review")])[0]
+    store.add_findings([dict(job_id=job.id, task_id=task.id, version_id=v.id, block_id="b00009", other_block_id=None,
                              category="consistency", severity="high", quote="125", description="beda dengan 120",
                              suggestion="", confidence=0.9, status="valid", validator_note=None)])
     assert asyncio.run(check_consistency(store.get_job(job.id))) == 0

@@ -79,6 +79,7 @@ async def check_consistency(job: Job) -> int:
     from . import review
 
     store = get_store()
+    store.delete_job_level_findings(job.id)  # rerun after a pause/restart starts clean
     # a block the workers already flagged for consistency is not reported again
     flagged = {f.block_id for f in store.get_findings(job.id, status="valid", category="consistency")}
     pairs = [(a, b) for a, b in candidate_conflicts(store.get_facts(job.id))

@@ -11,7 +11,7 @@ from .store import Store, get_store
 log = logging.getLogger(__name__)
 CHUNK_CHARS = 1600
 EMBED_BATCH = 32
-_background: set[asyncio.Task] = set()
+_background: dict[str, asyncio.Task] = {}
 
 
 def build_chunks(version_id: str, sections: list[Section], blocks: list[Block], max_chars: int = CHUNK_CHARS) -> list[Chunk]:
@@ -72,8 +72,25 @@ def index_version(store: Store, version_id: str) -> str:
 
 
 def schedule_index(version_id: str) -> asyncio.Task:
-    """Index in a worker thread without blocking the request."""
+    """Index in a worker thread without blocking the request (one task per version)."""
+    running = _background.get(version_id)
+    if running is not None and not running.done():
+        return running
     task = asyncio.get_running_loop().create_task(asyncio.to_thread(index_version, get_store(), version_id))
-    _background.add(task)
-    task.add_done_callback(_background.discard)
+    _background[version_id] = task
+    task.add_done_callback(lambda t, v=version_id: _background.pop(v, None) if _background.get(v) is t else None)
     return task
+
+
+async def ensure_index(version_id: str) -> str:
+    """Wait for a running index of this version, or build one when the version has none yet."""
+    store = get_store()
+    running = _background.get(version_id)
+    if running is not None and not running.done() and running.get_loop() is asyncio.get_running_loop():
+        await asyncio.shield(running)
+    status = store.get_version(version_id).index_status
+    if status in ("ready", "fts_only"):
+        return status
+    import agentorium.docpipe.index as me  # late lookup keeps index_version patchable
+
+    return await asyncio.to_thread(me.index_version, store, version_id)

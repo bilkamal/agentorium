@@ -48,7 +48,13 @@ def pick_agents() -> tuple[AgentDef, list[AgentDef]]:
         raise RuntimeError("Tim belum punya supervisor — tambahkan di ⚙ Pengaturan tim")
     if not workers:
         raise RuntimeError("Tim belum punya worker — tambahkan di ⚙ Pengaturan tim")
-    return sups[0], workers
+    # a mock agent answers {} — a review by it would report a clean document nobody read
+    if sups[0].provider == "mock":
+        raise RuntimeError(f"Supervisor {sups[0].name} masih memakai provider mock (demo) — pilih claude_code di ⚙ Pengaturan tim")
+    real = [w for w in workers if w.provider != "mock"]
+    if not real:
+        raise RuntimeError("Semua worker masih memakai provider mock (demo) — pilih claude_code di ⚙ Pengaturan tim")
+    return sups[0], real
 
 
 def _hooks():
@@ -159,15 +165,12 @@ runner.register("section_review", review_task)
 
 async def start_review(version_id: str, categories: list[str] | None = None) -> Job:
     """Create a review job for a ready version (indexing it first if needed) and start it."""
-    from .index import index_version
-
     store = get_store()
     version = store.get_version(version_id)
     if version is None or version.status != "ready":
         raise ValueError("versi belum siap direview")
     pick_agents()  # fail fast when the team is incomplete
-    if version.index_status not in ("ready", "fts_only"):
-        await asyncio.to_thread(index_version, store, version_id)
+    # no await before the job exists: the API's "already running" check stays atomic
     cats = [c for c in (categories or CATEGORIES) if c in CATEGORIES] or list(CATEGORIES)
     plan = plan_tasks(store.get_sections(version_id), store.get_blocks(version_id))
     job = store.create_job(version.document_id, version_id, "review", {"categories": cats})
@@ -176,10 +179,20 @@ async def start_review(version_id: str, categories: list[str] | None = None) -> 
     return store.get_job(job.id)
 
 
+async def _prepare_review(job: Job) -> None:
+    """Make sure the version is indexed before sections are reviewed (waits for a running index)."""
+    from .index import ensure_index
+
+    await ensure_index(job.version_id)
+
+
 async def _finalize_review(job: Job) -> None:
     from .consistency import check_consistency
 
+    if "consistency" not in (job.params.get("categories") or CATEGORIES):
+        return None
     await check_consistency(job)
 
 
+runner.register_preparer("review", _prepare_review)
 runner.register_finalizer("review", _finalize_review)
