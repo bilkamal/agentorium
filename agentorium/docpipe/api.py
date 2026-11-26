@@ -118,13 +118,13 @@ async def blocks(version_id: str, section_id: str | None = None):
 @router.get("/versions/{version_id}/download")
 async def download(version_id: str, variant: str = "current"):
     v = _version_or_404(version_id)
-    if variant not in ("current", "original"):
-        raise HTTPException(400, "variant harus 'current' atau 'original'")
+    if variant not in ("current", "original", "tracked"):
+        raise HTTPException(400, "variant harus 'current', 'original' atau 'tracked'")
     path = version_file(get_store(), v, variant)
     if not path.exists():
         raise HTTPException(404, "file versi tidak ditemukan")
     doc = get_store().get_document(v.document_id)
-    suffix = " (asli)" if variant == "original" and v.original_path else ""
+    suffix = {"original": " (asli)" if v.original_path else "", "tracked": " (tracked)"}.get(variant, "")
     name = f"{doc.title if doc else 'dokumen'} v{v.version_no}{suffix}{Path(path).suffix}"
     return FileResponse(path, filename=name)
 

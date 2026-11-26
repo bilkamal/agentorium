@@ -60,6 +60,7 @@ class Version:
     created_at: float
     index_status: str = "none"  # none | indexing | ready | fts_only | failed
     index_error: str | None = None
+    tracked_path: str | None = None  # revisions: the same version as tracked changes against its parent
 
 
 @dataclass
@@ -134,3 +135,19 @@ class Fact:
     value: str
     unit: str
     quote: str
+
+
+@dataclass
+class Change:
+    id: str
+    version_id: str
+    job_id: str | None
+    block_uid: str
+    block_id: str
+    old_text: str
+    new_text: str
+    reason: str
+    source_kind: str  # finding | instruction
+    source_ids: list[str]
+    status: str  # applied | needs_human | rejected | suggestion
+    note: str | None

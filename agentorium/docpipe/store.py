@@ -13,7 +13,7 @@ from pathlib import Path
 from ..config import settings
 import numpy as np
 
-from .models import Block, Chunk, Document, Fact, Finding, Job, ParsedDoc, Section, Task, Version
+from .models import Block, Change, Chunk, Document, Fact, Finding, Job, ParsedDoc, Section, Task, Version
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY, title TEXT NOT NULL, label TEXT NOT NULL DEFAULT '',
@@ -56,13 +56,20 @@ CREATE INDEX IF NOT EXISTS findings_by_job ON findings(job_id, ordinal);
 CREATE TABLE IF NOT EXISTS facts(id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
   version_id TEXT NOT NULL, block_id TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL,
   unit TEXT NOT NULL DEFAULT '', quote TEXT NOT NULL, ordinal INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS changes(id TEXT PRIMARY KEY, version_id TEXT NOT NULL REFERENCES versions(id) ON DELETE CASCADE,
+  job_id TEXT, block_uid TEXT NOT NULL, block_id TEXT NOT NULL, old_text TEXT NOT NULL, new_text TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '', source_kind TEXT NOT NULL, source_ids TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL,
+  note TEXT, ordinal INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS changes_by_version ON changes(version_id, ordinal);
 """
 
-MIGRATIONS = {"versions": [("index_status", "TEXT NOT NULL DEFAULT 'none'"), ("index_error", "TEXT")]}
+MIGRATIONS = {"versions": [("index_status", "TEXT NOT NULL DEFAULT 'none'"), ("index_error", "TEXT"),
+                           ("tracked_path", "TEXT")]}
 
 JOB_FIELDS = ("status", "params", "total_tasks", "error", "started_at", "finished_at", "resume_at")
 TASK_FIELDS = ("status", "attempts", "error", "output")
-VERSION_FIELDS = ("status", "error", "warnings", "original_path", "file_path", "note", "index_status", "index_error")
+VERSION_FIELDS = ("status", "error", "warnings", "original_path", "file_path", "note", "index_status", "index_error",
+                  "tracked_path")
 
 
 class _Result:
@@ -408,6 +415,26 @@ class Store:
     def count_findings(self, job_id: str) -> dict[str, int]:
         rows = self._db.execute("SELECT status, COUNT(*) FROM findings WHERE job_id=? GROUP BY status", (job_id,))
         return {r[0]: r[1] for r in rows}
+
+    CHANGE_COLS = ("version_id", "job_id", "block_uid", "block_id", "old_text", "new_text", "reason", "source_kind",
+                   "source_ids", "status", "note")
+
+    def add_changes(self, rows: list[dict]) -> list[str]:
+        return self._insert_rows("changes", self.CHANGE_COLS,
+                                 [{"reason": "", **r, "source_ids": json.dumps(list(r.get("source_ids") or []))}
+                                  for r in rows])
+
+    def get_changes(self, version_id: str | None = None, job_id: str | None = None) -> list[Change]:
+        q, args = "SELECT * FROM changes WHERE 1=1", []
+        if version_id:
+            q += " AND version_id=?"
+            args.append(version_id)
+        if job_id:
+            q += " AND job_id=?"
+            args.append(job_id)
+        rows = self._db.execute(q + " ORDER BY ordinal", args).fetchall()
+        return [Change(**{**{k: r[k] for k in r.keys() if k != "ordinal"}, "source_ids": json.loads(r["source_ids"])})
+                for r in rows]
 
     def add_facts(self, rows: list[dict]) -> list[str]:
         return self._insert_rows("facts", self.FACT_COLS, [{"unit": "", **r} for r in rows])
