@@ -9,6 +9,10 @@
 <body>
 <header class="topbar">
   <div class="brand"><span class="logo">⌂</span> Agentorium <small data-i18n="tagline">visualisasi multi-agent</small></div>
+  <nav class="view-tabs" role="tablist">
+    <button id="tab-office" class="btn small active" role="tab" data-view="office">Kantor</button>
+    <button id="tab-docs" class="btn small" role="tab" data-view="docs">Dokumen</button>
+  </nav>
   <div class="agents" id="agent-chips"></div>
   <div class="session-controls">
     <select id="session-select" title="Session"></select>
@@ -71,6 +75,36 @@
   </section>
 </main>
 
+<main id="docs-view" class="docs-layout" hidden>
+  <section class="panel docs-list">
+    <div class="panel-head"><h2 data-d="documents">Dokumen</h2></div>
+    <form id="docs-upload" class="docs-upload">
+      <input type="file" id="docs-file" accept=".docx,.pdf" required>
+      <input type="text" id="docs-title" data-dp="title_ph" placeholder="Judul (opsional)">
+      <input type="text" id="docs-label" data-dp="label_ph" placeholder="Label, mis. laporan bulanan (opsional)">
+      <button type="submit" class="btn primary" data-d="upload">Unggah DOCX/PDF</button>
+    </form>
+    <div id="docs-error" class="error" hidden></div>
+    <ul id="docs-items" class="docs-items"></ul>
+  </section>
+  <section class="panel docs-detail">
+    <div class="panel-head"><h2 id="doc-title" data-d="pick">Pilih dokumen</h2><span id="doc-label" class="tag" hidden></span></div>
+    <div id="doc-body" class="doc-body" hidden>
+      <div class="doc-actions">
+        <label class="btn"><span data-d="new_version">Unggah versi baru</span><input type="file" id="doc-new-version" accept=".docx,.pdf" hidden></label>
+        <button id="doc-delete" class="btn danger" data-d="delete_doc">Hapus dokumen</button>
+      </div>
+      <h3 data-d="versions">Versi</h3>
+      <div class="table-wrap"><table class="doc-versions"><thead><tr>
+        <th>#</th><th data-d="source">Sumber</th><th data-d="time">Waktu</th><th data-d="status">Status</th><th data-d="note">Catatan</th><th></th>
+      </tr></thead><tbody id="doc-versions"></tbody></table></div>
+      <h3><span data-d="outline">Outline</span> <small id="outline-version" class="muted"></small></h3>
+      <ul id="doc-outline" class="doc-outline"></ul>
+      <div id="doc-blocks" class="doc-blocks" hidden></div>
+    </div>
+  </section>
+</main>
+
 <dialog id="settings" class="dialog wide">
   <div class="dialog-head"><h3 data-i18n="settings">Pengaturan tim</h3><button type="button" class="btn ghost" id="settings-close">✕</button></div>
   <p class="hint" data-i18n="settings_hint">Satu client (bicara dengan Anda), satu supervisor (merencanakan &amp; meninjau), dan berapa pun worker. Setiap agent punya provider, model, dan API key sendiri.</p>
@@ -110,5 +144,6 @@
 <template id="step-tpl"><li><span class="dot"></span><span class="title"></span><span class="meta"></span></li></template>
 <script src="/static/scene.js"></script>
 <script src="/static/app.js"></script>
+<script src="/static/docs.js"></script>
 </body>
 </html>
