@@ -12,12 +12,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .config import PROVIDERS, ROOT, settings
+from .docpipe.api import router as docpipe_router
 from .documents import ALLOWED_EXTENSIONS, MAX_UPLOAD_BYTES, DocumentError, extract_text
 from .orchestrator import EXTERNAL_EVENT_TYPES, Orchestrator, Session
 from .registry import COLORS, HAIR, ROLES, RegistryError, registry
 
 app = FastAPI(title="Agentorium", version="0.2.0")
 orchestrator = Orchestrator()
+app.include_router(docpipe_router)
 WEB_DIR = ROOT / "web"
 SDK_DIR = ROOT / "sdk"
 app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
