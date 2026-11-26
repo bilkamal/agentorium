@@ -9,7 +9,7 @@
       pick: 'Pilih dokumen', new_version: 'Unggah versi baru', delete_doc: 'Hapus dokumen', versions: 'Versi',
       source: 'Sumber', time: 'Waktu', status: 'Status', note: 'Catatan', outline: 'Outline', download: 'Unduh',
       download_original: 'Unduh asli', restore: 'Kembalikan ke versi ini', view: 'Lihat', empty: 'Belum ada dokumen. Unggah DOCX atau PDF di atas.',
-      uploading: 'Mengunggah…', confirm_delete: 'Hapus dokumen ini beserta semua versinya?',
+      uploading: 'Mengunggah…', confirm_delete: 'Hapus dokumen ini beserta semua versinya?', confirm_rereview: 'Versi ini sudah direview ({n} temuan valid). Review ulang dari awal? Ini memakai kuota Claude lagi.',
       confirm_restore: 'Buat versi baru yang isinya sama dengan v{n}?', blocks_of: 'Isi bagian', versions_n: '{n} versi',
       src_upload: 'unggah', src_rollback: 'rollback', src_revision: 'revisi AI', src_instructed_revision: 'revisi dari bahan', src_update: 'update berkala',
       st_ready: 'siap', st_processing: 'diproses', st_failed: 'gagal',
@@ -54,7 +54,7 @@
       pick: 'Pick a document', new_version: 'Upload new version', delete_doc: 'Delete document', versions: 'Versions',
       source: 'Source', time: 'Time', status: 'Status', note: 'Note', outline: 'Outline', download: 'Download',
       download_original: 'Download original', restore: 'Restore this version', view: 'View', empty: 'No documents yet. Upload a DOCX or PDF above.',
-      uploading: 'Uploading…', confirm_delete: 'Delete this document and all its versions?',
+      uploading: 'Uploading…', confirm_delete: 'Delete this document and all its versions?', confirm_rereview: 'This version was already reviewed ({n} valid findings). Review it again from scratch? This uses Claude quota again.',
       confirm_restore: 'Create a new version with the same content as v{n}?', blocks_of: 'Section content', versions_n: '{n} versions',
       src_upload: 'upload', src_rollback: 'rollback', src_revision: 'AI revision', src_instructed_revision: 'revision from notes', src_update: 'periodic update',
       st_ready: 'ready', st_processing: 'processing', st_failed: 'failed',
@@ -237,7 +237,7 @@
     state.job = null;
     renderJob(null);
     const jobs = await api(`/api/docs/versions/${versionId}/jobs`);
-    const job = jobs.find((j) => j.type === 'review');
+    const job = window.JobPick.pick(jobs, ['review']);
     if (job && state.versionId === versionId) await refreshJob(job.id);
   }
 
@@ -279,6 +279,8 @@
   async function startReview() {
     const cats = [...document.querySelectorAll('input[name="review-cat"]:checked')].map((c) => c.value);
     if (!cats.length) { showError(t('pick_category')); return; }
+    const prev = state.job?.job;
+    if (prev && ['done', 'partial'].includes(prev.status) && !window.confirm(t('confirm_rereview', { n: state.job.counts.valid }))) return;
     showError('');
     $('#doc-review').disabled = true;
     try {
@@ -357,7 +359,7 @@
     state.rjob = null;
     renderRevision(null);
     const jobs = await api(`/api/docs/versions/${versionId}/jobs`);
-    const job = jobs.find((j) => MUTATING.includes(j.type));
+    const job = window.JobPick.pick(jobs, MUTATING);
     if (job && state.versionId === versionId) await refreshRevision(job.id);
   }
 

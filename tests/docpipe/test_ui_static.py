@@ -94,3 +94,37 @@ def test_tables_use_inline_diff(client):
     assert "/static/worddiff.js" in html and html.index("/static/worddiff.js") < html.index("/static/docs.js")
     js = client.get("/static/docs.js").text
     assert js.count("WordDiff.render(") >= 2
+
+
+def _node_pick(jobs, types):
+    import json
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    if not shutil.which("node"):
+        pytest.skip("node not installed")
+    src = Path(__file__).resolve().parents[2] / "web" / "jobpick.js"
+    code = (f"const P = require({json.dumps(str(src))}); "
+            f"console.log(JSON.stringify(P.pick({json.dumps(jobs)}, {json.dumps(types)})));")
+    return json.loads(subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout)
+
+
+def test_cancelled_review_does_not_hide_the_finished_one():
+    jobs = [{"id": "new", "type": "review", "status": "cancelled"}, {"id": "old", "type": "review", "status": "done"}]
+    assert _node_pick(jobs, ["review"])["id"] == "old"
+    running = [{"id": "r", "type": "review", "status": "running"}] + jobs
+    assert _node_pick(running, ["review"])["id"] == "r"
+    assert _node_pick([{"id": "c", "type": "review", "status": "cancelled"}], ["review"])["id"] == "c"
+    assert _node_pick([{"id": "x", "type": "revision", "status": "done"}], ["review"]) is None
+
+
+def test_docs_js_uses_job_pick(client):
+    html = client.get("/").text
+    assert html.index("/static/jobpick.js") < html.index("/static/docs.js")
+    assert client.get("/static/docs.js").text.count("JobPick.pick(") >= 2
+
+
+def test_rereview_asks_first(client):
+    js = client.get("/static/docs.js").text
+    assert "confirm_rereview" in js and js.count("confirm_rereview") >= 3
