@@ -38,7 +38,7 @@
       followup: 'Tindak lanjut', followup_download: 'Unduh tabel tindak lanjut (DOCX)', col_source: 'Sumber', col_instruction: 'Instruksi', col_response: 'Tanggapan',
       in_pending: 'belum diproses', in_done: 'selesai', in_not_applicable: 'tidak dikerjakan', in_needs_human: 'perlu dicek manual',
       src_notes: 'Catatan', src_comment: 'Komentar Word', src_file: 'Berkas', maybe: 'kemungkinan',
-      changes: 'Perubahan', col_old: 'Teks lama', col_new: 'Teks baru', col_reason: 'Alasan / catatan',
+      changes: 'Perubahan', col_old: 'Teks lama', col_new: 'Teks baru', col_change: 'Perubahan', col_reason: 'Alasan / catatan',
       ch_applied: 'diterapkan', ch_needs_human: 'perlu dicek', ch_rejected: 'ditolak', ch_suggestion: 'saran',
       changes_counts: 'diterapkan {applied} · perlu dicek {needs_human} · ditolak {rejected} · saran {suggestion}',
       followup_counts: 'selesai {done} · tidak dikerjakan {not_applicable} · perlu dicek {needs_human}',
@@ -83,7 +83,7 @@
       followup: 'Follow-up', followup_download: 'Download follow-up table (DOCX)', col_source: 'Source', col_instruction: 'Instruction', col_response: 'Response',
       in_pending: 'pending', in_done: 'done', in_not_applicable: 'not done', in_needs_human: 'needs manual check',
       src_notes: 'Notes', src_comment: 'Word comment', src_file: 'File', maybe: 'maybe',
-      changes: 'Changes', col_old: 'Old text', col_new: 'New text', col_reason: 'Reason / note',
+      changes: 'Changes', col_old: 'Old text', col_new: 'New text', col_change: 'Change', col_reason: 'Reason / note',
       ch_applied: 'applied', ch_needs_human: 'needs check', ch_rejected: 'rejected', ch_suggestion: 'suggestion',
       changes_counts: 'applied {applied} · needs check {needs_human} · rejected {rejected} · suggestions {suggestion}',
       followup_counts: 'done {done} · not done {not_applicable} · needs check {needs_human}',
@@ -480,13 +480,12 @@
     $('#changes-counts').textContent = t('changes_counts', counts);
     const tbody = $('#changes-rows');
     tbody.innerHTML = '';
-    if (!rows.length) tbody.append(el('tr', {}, el('td', { colspan: '5', class: 'muted' }, t('no_changes'))));
+    if (!rows.length) tbody.append(el('tr', {}, el('td', { colspan: '4', class: 'muted' }, t('no_changes'))));
     rows.forEach((c) => {
       const isEdit = c.status !== 'suggestion' && c.new_text;
       tbody.append(el('tr', { onclick: () => showBlock(c.section_id, c.block_id) },
         el('td', { class: 'loc' }, el('div', {}, c.heading_path || ''), el('small', { class: 'muted' }, c.block_id)),
-        el('td', { class: isEdit ? 'old' : '' }, c.old_text),
-        el('td', { class: 'new' }, isEdit ? c.new_text : ''),
+        el('td', { class: 'diff' }, isEdit ? window.WordDiff.render(c.old_text, c.new_text) : c.old_text),
         el('td', {}, el('div', {}, c.reason || ''), c.note ? el('div', { class: 'muted' }, c.note) : ''),
         el('td', {}, el('span', { class: `tag ch-${c.status}` }, t('ch_' + c.status)))));
     });
@@ -569,8 +568,7 @@
       data.blocks.forEach((d) => tbody.append(el('tr', {},
         el('td', {}, el('span', { class: `tag cmp-${d.status}` }, t('cmp_' + d.status))),
         el('td', { class: 'loc' }, d.section),
-        el('td', { class: 'old' }, d.old_text),
-        el('td', { class: 'new' }, d.new_text))));
+        el('td', { class: 'diff' }, window.WordDiff.render(d.old_text || '', d.new_text || '')))));
       $('#cmp-table').hidden = !data.blocks.length;
       const redline = $('#cmp-redline');
       redline.hidden = !(isDocx(versionById(a)) && isDocx(versionById(b)));
