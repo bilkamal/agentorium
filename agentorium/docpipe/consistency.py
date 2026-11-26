@@ -79,7 +79,10 @@ async def check_consistency(job: Job) -> int:
     from . import review
 
     store = get_store()
-    pairs = candidate_conflicts(store.get_facts(job.id))
+    # a block the workers already flagged for consistency is not reported again
+    flagged = {f.block_id for f in store.get_findings(job.id, status="valid", category="consistency")}
+    pairs = [(a, b) for a, b in candidate_conflicts(store.get_facts(job.id))
+             if a.block_id not in flagged and b.block_id not in flagged]
     if not pairs:
         return 0
     supervisor, _ = review.pick_agents()

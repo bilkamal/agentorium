@@ -72,7 +72,9 @@ Aturan:
 - severity: high = salah makna/angka/fatal, medium = mengganggu pembaca, low = kosmetik.
 - confidence 0..1: seberapa yakin ini benar-benar masalah.
 - Angka ditulis dengan format Indonesia (1.234,5). Jangan menandai format Indonesia sebagai kesalahan.
-- Tulis description dan suggestion dalam bahasa dokumen.
+- Tulis description dan suggestion dalam bahasa dokumen, ditujukan kepada penulis dokumen.
+- Jika bagian ini bertentangan dengan KONTEKS, laporkan pada blok di bagian ini dan sebut nilai serta judul bagian
+  lainnya. Jangan membahas aturan tugas ini, format prompt, atau ID blok di luar bagian ini dalam description.
 - Jangan melaporkan hal yang bukan masalah. Tidak ada temuan = daftar kosong.
 - facts: catat angka, tanggal, istilah kunci, dan nama penting di bagian ini (key = nama besaran yang ringkas,
   misalnya "jumlah responden"), dengan quote persis dari bloknya. Dipakai untuk cek konsistensi antarbab."""

@@ -116,3 +116,26 @@ def test_start_review_rejects_unready_version(tmp_settings, team):  # noqa: F811
     v = store.add_version(d.id, source="upload", filename="a.docx", parent_version_id=None)
     with pytest.raises(ValueError):
         asyncio.run(start_review(v.id, None))
+
+
+def test_check_consistency_skips_conflict_already_reported_by_worker(tmp_settings, team, llm):  # noqa: F811
+    store = get_store()
+    d = store.create_document("x")
+    v = store.add_version(d.id, source="upload", filename="a.docx", parent_version_id=None)
+    job = store.create_job(d.id, v.id, "review", {})
+    store.add_facts([dict(job_id=job.id, version_id=v.id, block_id="b00001", kind="number", key="jumlah responden",
+                          value="120", unit="orang", quote="120"),
+                     dict(job_id=job.id, version_id=v.id, block_id="b00009", kind="number", key="jumlah responden",
+                          value="125", unit="orang", quote="125")])
+    store.add_findings([dict(job_id=job.id, task_id=None, version_id=v.id, block_id="b00009", other_block_id=None,
+                             category="consistency", severity="high", quote="125", description="beda dengan 120",
+                             suggestion="", confidence=0.9, status="valid", validator_note=None)])
+    assert asyncio.run(check_consistency(store.get_job(job.id))) == 0
+    assert llm[1] == [] and len(store.get_findings(job.id)) == 1
+
+
+def test_worker_prompt_forbids_meta_commentary():
+    from agentorium.docpipe.prompts import worker_system
+
+    s = worker_system("W", ["consistency"])
+    assert "KONTEKS" in s and "aturan" in s.lower() and "ID blok" in s
