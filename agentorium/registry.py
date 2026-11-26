@@ -38,7 +38,7 @@ class AgentDef:
     def public(self) -> dict:
         data = asdict(self)
         data["has_key"] = bool(self.api_key)
-        data["configured"] = self.provider == "mock" or bool(self.api_key) or bool(self.base_url)
+        data["configured"] = self.provider in ("mock", "claude_code") or bool(self.api_key) or bool(self.base_url)
         data.pop("api_key")
         return data
 

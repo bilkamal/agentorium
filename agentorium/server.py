@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .config import ROOT, settings
+from .config import PROVIDERS, ROOT, settings
 from .documents import ALLOWED_EXTENSIONS, MAX_UPLOAD_BYTES, DocumentError, extract_text
 from .orchestrator import EXTERNAL_EVENT_TYPES, Orchestrator, Session
 from .registry import COLORS, HAIR, ROLES, RegistryError, registry
@@ -75,7 +75,7 @@ async def config():
     return {
         "agents": registry.public(),
         "roles": ROLES,
-        "providers": ["anthropic", "openai", "mock"],
+        "providers": list(PROVIDERS),
         "colors": COLORS, "hairs": HAIR,
         "max_revisions": settings.max_revisions,
         "allowed_extensions": sorted(ALLOWED_EXTENSIONS),
