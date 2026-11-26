@@ -90,7 +90,7 @@ Nilai setiap temuan sesuai index-nya. Bersikap tegas: lebih baik menolak temuan 
 
 def _block_line(b) -> str:
     where = ""
-    if b.type == "cell" and b.table_index is not None:
+    if b.type == "table_cell" and b.table_index is not None:
         where = f"(tabel {b.table_index + 1}, baris {(b.row or 0) + 1}, kolom {(b.col or 0) + 1}) "
     return f"[{b.id}] {where}{b.text}"
 

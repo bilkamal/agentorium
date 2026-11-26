@@ -67,7 +67,7 @@ def doc(tmp_settings, fake_embedder):
                     text="Laporan ini menganalisa penjualan toko dengan 120 responden."),
               Block(id="b00001", uid="u1", ordinal=1, section_id="s0001", type="paragraph",
                     text="Penjualan bulan September naik 12 persen."),
-              Block(id="b00002", uid="u2", ordinal=2, section_id="s0001", type="cell",
+              Block(id="b00002", uid="u2", ordinal=2, section_id="s0001", type="table_cell",
                     text="Rp 1.200 juta", table_index=0, row=1, col=2)]
     store.save_structure(v.id, ParsedDoc(sections, blocks))
     store.update_version(v.id, status="ready")
