@@ -180,3 +180,29 @@ button, select, textarea { font: inherit; color: inherit; }
 .blk p { margin: 2px 0 0; white-space: pre-wrap; }
 .blk-heading { border-left-color: var(--accent); font-weight: 600; }
 .blk-table_cell { border-left-color: var(--info); }
+
+/* ---- review & search */
+.review-box { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.review-box h3 { margin: 0; }
+.review-cats { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
+.review-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.review-progress { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.review-progress li { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.review-progress li.done { border-color: var(--ok); color: var(--ok); }
+.review-progress li.running { border-color: var(--warn); color: var(--warn); }
+.review-progress li.failed { border-color: var(--bad); color: var(--bad); }
+.findings-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+.findings-head select { padding: 4px 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; font-size: 12px; max-width: 100%; }
+.findings-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.findings-table th, .findings-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.findings-table tbody tr { cursor: pointer; }
+.findings-table tbody tr:hover { background: var(--agent-bubble); }
+.findings-table td.quote { font-style: italic; min-width: 120px; }
+.findings-table td.loc { min-width: 120px; }
+.sev-high { color: var(--bad); font-weight: 600; } .sev-medium { color: var(--warn); } .sev-low { color: var(--muted); }
+.blk.hl { border-left-color: var(--warn); background: var(--user-bubble); }
+.doc-search { display: flex; gap: 8px; }
+.doc-search input { flex: 1; min-width: 0; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; }
+.search-results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.search-results li { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 12px; }
+.search-results li p { margin: 4px 0 0; white-space: pre-wrap; }

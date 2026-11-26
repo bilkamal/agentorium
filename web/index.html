@@ -98,9 +98,46 @@
       <div class="table-wrap"><table class="doc-versions"><thead><tr>
         <th>#</th><th data-d="source">Sumber</th><th data-d="time">Waktu</th><th data-d="status">Status</th><th data-d="note">Catatan</th><th></th>
       </tr></thead><tbody id="doc-versions"></tbody></table></div>
+      <section class="review-box">
+        <h3 data-d="review">Review</h3>
+        <div class="review-cats">
+          <label><input type="checkbox" name="review-cat" value="language" checked> <span data-d="cat_language">Bahasa</span></label>
+          <label><input type="checkbox" name="review-cat" value="consistency" checked> <span data-d="cat_consistency">Konsistensi</span></label>
+          <label><input type="checkbox" name="review-cat" value="structure" checked> <span data-d="cat_structure">Struktur</span></label>
+          <label><input type="checkbox" name="review-cat" value="substance" checked> <span data-d="cat_substance">Substansi</span></label>
+        </div>
+        <div class="review-bar">
+          <button id="doc-review" class="btn primary" data-d="review_start">Review versi ini</button>
+          <span id="review-status" class="muted"></span>
+          <button id="review-cancel" class="btn small" data-d="cancel" hidden>Batalkan</button>
+          <button id="review-office" class="btn small" data-d="see_office" hidden>Lihat di Kantor</button>
+        </div>
+        <ul id="review-progress" class="review-progress"></ul>
+        <div id="findings-box" hidden>
+          <div class="findings-head">
+            <b data-d="findings">Temuan</b> <span id="findings-counts" class="muted"></span>
+            <span class="spacer"></span>
+            <select id="findings-cat"><option value="" data-d="all_categories">Semua kategori</option>
+              <option value="language" data-d="cat_language">Bahasa</option><option value="consistency" data-d="cat_consistency">Konsistensi</option>
+              <option value="structure" data-d="cat_structure">Struktur</option><option value="substance" data-d="cat_substance">Substansi</option></select>
+            <select id="findings-status"><option value="valid" data-d="fs_valid">Valid</option><option value="needs_human" data-d="fs_needs_human">Perlu dicek</option>
+              <option value="rejected" data-d="fs_rejected">Ditolak</option><option value="" data-d="all_status">Semua status</option></select>
+          </div>
+          <div class="table-wrap"><table id="findings-table" class="findings-table"><thead><tr>
+            <th data-d="col_category">Kategori</th><th data-d="col_severity">Tingkat</th><th data-d="col_location">Lokasi</th>
+            <th data-d="col_quote">Kutipan</th><th data-d="col_problem">Masalah</th><th data-d="col_suggestion">Saran</th>
+          </tr></thead><tbody id="findings-rows"></tbody></table></div>
+        </div>
+      </section>
       <h3><span data-d="outline">Outline</span> <small id="outline-version" class="muted"></small></h3>
       <ul id="doc-outline" class="doc-outline"></ul>
       <div id="doc-blocks" class="doc-blocks" hidden></div>
+      <h3 data-d="search_title">Cari di dokumen (uji RAG)</h3>
+      <form id="doc-search" class="doc-search">
+        <input type="search" id="doc-search-q" data-dp="search_ph" placeholder="mis. jumlah responden" required>
+        <button type="submit" class="btn" data-d="search">Cari</button>
+      </form>
+      <ul id="search-results" class="search-results"></ul>
     </div>
   </section>
 </main>

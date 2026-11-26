@@ -90,3 +90,37 @@ def test_get_store_follows_data_dir(tmp_settings, tmp_path):
     object.__setattr__(tmp_settings, "data_dir", tmp_path / "other")
     assert get_store() is not a
     assert isinstance(get_store(), Store)
+
+
+def test_reads_are_consistent_while_another_thread_writes(tmp_settings, tmp_path):
+    import threading
+
+    from agentorium.docpipe.index import index_version
+    from agentorium.docpipe.service import ingest
+    from agentorium.docpipe.store import get_store
+
+    from .fixtures import make_basic_docx
+
+    store = get_store()
+    _, v = ingest(store, filename="a.docx", data=make_basic_docx(tmp_path).read_bytes())
+    stop = threading.Event()
+
+    def writer():
+        while not stop.is_set():
+            index_version(store, v.id)
+
+    t = threading.Thread(target=writer)
+    t.start()
+    bad = []
+    try:
+        for _ in range(3000):
+            try:
+                got = store.get_version(v.id)
+                if got is None or got.status != "ready":
+                    bad.append(got)
+            except Exception as exc:  # interleaved cursors can also raise
+                bad.append(exc)
+    finally:
+        stop.set()
+        t.join()
+    assert bad == []

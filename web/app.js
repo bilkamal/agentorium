@@ -431,6 +431,9 @@
   $('#clear-log').addEventListener('click', () => { $('#log').innerHTML = ''; });
   $('#lang-select').addEventListener('change', (e) => applyLanguage(e.target.value));
 
+  // lets the Dokumen tab jump to a review's office session
+  window.Office = { openSession: async (id) => { await renderSessionList(); openSession(id); } };
+
   (async function init() {
     state.config = await api.json('/api/config');
     $('#file-input').accept = state.config.allowed_extensions.join(',');

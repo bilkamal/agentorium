@@ -1,0 +1,136 @@
+"""Show document jobs in the office visualiser: one external session per job, agents from the registry.
+Everything here is best effort — a visualiser problem never breaks a review."""
+from __future__ import annotations
+
+import functools
+import logging
+import threading
+
+from ..registry import registry
+from .jobs import runner
+from .models import Job
+from .store import get_store
+
+log = logging.getLogger(__name__)
+bridge: "OfficeBridge | None" = None
+_listening = False
+
+
+def _safe(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:
+            log.warning("office bridge %s failed: %s", fn.__name__, exc)
+            return None
+    return wrapper
+
+
+class OfficeBridge:
+    def __init__(self, orchestrator):
+        self.orch = orchestrator
+        self._lock = threading.Lock()
+
+    # --------------------------------------------------------------- session
+    def _session(self, job: Job):
+        store = get_store()
+        with self._lock:
+            sid = (store.get_job(job.id) or job).params.get("session_id")
+            s = self.orch.get(sid) if sid else None
+            if s is not None:
+                return s
+            doc = store.get_document(job.document_id)
+            version = store.get_version(job.version_id)
+            title = f"Review: {doc.title if doc else '?'} v{version.version_no if version else '?'}"
+            s = self.orch.create_session(kind="external", title=title)
+            fresh = store.get_job(job.id) or job
+            store.update_job(job.id, params={**fresh.params, "session_id": s.id})
+            team = registry.by_role("supervisor")[:1] + registry.workers()
+            for a in team:
+                self.orch.push_external(s, {"type": "register_agent", "id": a.id, "name": a.name, "role": a.role,
+                                            "color": a.color, "hair": a.hair, "skills": a.skills})
+            sections = {sec.id: sec for sec in store.get_sections(job.version_id)}
+            workers = registry.workers() or [None]
+            steps = []
+            for t in store.get_tasks(job.id):
+                sec = sections.get(t.section_id)
+                w = workers[t.ordinal % len(workers)]
+                steps.append({"id": t.ordinal + 1, "title": sec.heading if sec else t.section_id,
+                              "assignee": w.id if w else "", "instructions": sec.path if sec else "",
+                              "deliverable": "temuan review"})
+            self.orch.push_external(s, {"type": "plan", "status": "agreed",
+                                        "plan": {"objective": title, "steps": steps}})
+            self.orch.push_external(s, {"type": "stage", "stage": "executing"})
+            return s
+
+    def session_for(self, job: Job) -> str | None:
+        s = _safe(self._session)(job)
+        return s.id if s else None
+
+    def _push(self, job: Job, event: dict) -> None:
+        s = self._session(job)
+        self.orch.push_external(s, event)
+
+    # ------------------------------------------------------- review hooks
+    @_safe
+    def task_started(self, job, task, worker, supervisor, section) -> None:
+        step = task.ordinal + 1
+        self._push(job, {"type": "flow", "source": supervisor.id, "target": worker.id, "label": f"step {step}"})
+        self._push(job, {"type": "step", "step_id": step, "status": "running", "attempt": task.attempts + 1,
+                         "assignee": worker.id})
+        self._push(job, {"type": "agent_status", "agent": worker.id, "status": "working"})
+
+    @_safe
+    def submitted(self, job, task, worker, supervisor, n: int) -> None:
+        self._push(job, {"type": "flow", "source": worker.id, "target": supervisor.id, "label": "result"})
+        self._push(job, {"type": "agent_status", "agent": worker.id, "status": "idle"})
+        self._push(job, {"type": "agent_status", "agent": supervisor.id, "status": "reviewing"})
+
+    @_safe
+    def task_finished(self, job, task, worker, supervisor, n_valid: int) -> None:
+        step = task.ordinal + 1
+        self._push(job, {"type": "agent_status", "agent": worker.id, "status": "idle"})
+        self._push(job, {"type": "agent_status", "agent": supervisor.id, "status": "idle"})
+        self._push(job, {"type": "step", "step_id": step, "status": "done", "attempt": task.attempts + 1,
+                         "assignee": worker.id})
+        if n_valid:
+            self._push(job, {"type": "note", "agent": supervisor.id,
+                             "message": f"bagian {step}: {n_valid} temuan diterima"})
+
+    # ---------------------------------------------------------- job events
+    @_safe
+    def on_job_event(self, job: Job, event: str, payload: dict) -> None:
+        if job is None or job.type != "review":
+            return
+        sup = (registry.by_role("supervisor")[:1] or [None])[0]
+        agent = sup.id if sup else ""
+        if event == "started":
+            self._session(job)
+        elif event == "paused":
+            self._push(job, {"type": "note", "agent": agent,
+                             "message": "kuota Claude habis — review dijeda dan akan lanjut otomatis"})
+        elif event == "resumed":
+            self._push(job, {"type": "note", "agent": agent, "message": "review dilanjutkan"})
+        elif event == "task_failed":
+            self._push(job, {"type": "error", "message": f"bagian gagal: {payload.get('error', '')}"})
+        elif event == "finalizing":
+            self._push(job, {"type": "agent_status", "agent": agent, "status": "reviewing"})
+            self._push(job, {"type": "note", "agent": agent, "message": "cek konsistensi antarbab"})
+        elif event in ("finished", "cancelled"):
+            counts = get_store().count_findings(job.id)
+            self._push(job, {"type": "agent_status", "agent": agent, "status": "idle"})
+            self._push(job, {"type": "note", "agent": agent,
+                             "message": f"review {payload.get('status', event)}: {counts.get('valid', 0)} temuan valid, "
+                                        f"{counts.get('needs_human', 0)} perlu dicek, {counts.get('rejected', 0)} ditolak"})
+            self._push(job, {"type": "stage", "stage": "done"})
+
+
+def install(orchestrator) -> OfficeBridge:
+    """Connect document jobs to the office visualiser (idempotent)."""
+    global bridge, _listening
+    bridge = OfficeBridge(orchestrator)
+    if not _listening:
+        runner.on_event(lambda job, event, payload: bridge and bridge.on_job_event(job, event, payload))
+        _listening = True
+    return bridge
