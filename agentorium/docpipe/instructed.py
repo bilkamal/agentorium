@@ -147,7 +147,10 @@ async def _finalize(job: Job) -> None:
             status, reply = "needs_human", f"dilaporkan selesai tetapi tidak ada perubahan: {r['response']}"
         else:
             status, reply = "needs_human", "tidak ditangani"
-        store.update_instruction(i.id, status=status, response=reply)
+        where = {}
+        if status == "done":  # point at the paragraphs actually changed, not the retrieval guesses
+            where = {"block_ids": [c.block_id for c in changes if c.status == "applied" and i.id in c.source_ids]}
+        store.update_instruction(i.id, status=status, response=reply, **where)
 
 
 def _source_label(i) -> str:

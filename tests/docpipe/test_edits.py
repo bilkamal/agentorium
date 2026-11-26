@@ -125,3 +125,28 @@ def test_carry_markup():
         "Kami **data penjualan** tahun"
     assert carry_markup("A _miring_ b", "A miring b", "A condong b") == "A _condong_ b"
     assert carry_markup("**satu dua**", "satu dua", "dua") is None  # opener deleted → caller falls back
+
+
+def test_grounded_replacement_may_drop_the_old_value():
+    from agentorium.docpipe.edits import validate_edit
+
+    basis = ["Anggaran kegiatan yang benar Rp 540 juta"]
+    assert validate_edit("Anggaran Rp 450 juta.", "Anggaran Rp 540 juta.", basis, []) is None
+    assert validate_edit("Rapat 12 Oktober.", "Rapat 21 Oktober.", ["tanggal rapat 21 Oktober"], []) is None
+    why = validate_edit("Anggaran Rp 450 juta pada 12 Oktober.", "Anggaran Rp 540 juta pada Oktober.", basis, [])
+    assert why and "12" in why
+
+
+def test_edit_paragraph_with_word_comment(tmp_path):
+    from agentorium.docpipe.edits import BlockEdit, apply_block_edits
+
+    from .test_materials import commented_docx
+
+    old = "Data dikumpulkan dari sistem kasir."
+    new = "Data dikumpulkan dari aplikasi kasir."
+    tracked, clean, results = apply_block_edits(commented_docx(tmp_path), [BlockEdit("b1", old, new, "x")])
+    assert results[0].status == "applied", results[0].error
+    import io
+
+    import docx
+    assert new in [p.text for p in docx.Document(io.BytesIO(clean)).paragraphs]

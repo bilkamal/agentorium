@@ -87,5 +87,8 @@ async def edit_loop(*, wllm, sllm, worker_system: str, user_for, section_path: s
         rounds += 1
         reply = await wllm.complete_json(worker_system, [{"role": "user", "content": user_for(to_revise)}],
                                          schema, purpose=f"{purpose}_revise")
-        candidates = _clean(reply.get("edits"), blocks_by_id, basis, doc_texts, res.rejected)
+        # only the edits the supervisor asked to revise go back to it; re-sent approved edits are ignored
+        wanted = {e["block_id"] for e, _ in to_revise}
+        candidates = [e for e in _clean(reply.get("edits"), blocks_by_id, basis, doc_texts, res.rejected)
+                      if e["block_id"] in wanted]
     return res

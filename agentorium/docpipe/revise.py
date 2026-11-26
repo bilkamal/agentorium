@@ -126,6 +126,10 @@ async def apply_job_edits(job: Job, *, source: str, kind: str, extra_changes: li
                  for e in o.get("rejected", []) if e["block_id"] in blocks]
         rows += [_change(job, blocks[e["block_id"]], e, "needs_human", base.id, e.get("note"), kind)
                  for e in o.get("needs_human", []) if e["block_id"] in blocks]
+    by_block = {}
+    for e in approved:  # one edit per block: a block in two tasks must not be edited twice
+        by_block[e["block_id"]] = e
+    approved = list(by_block.values())
     edits = [BlockEdit(e["block_id"], blocks[e["block_id"]].text, e["new_text"], e["reason"], e["source_ids"])
              for e in approved]
     tracked, clean, results = await asyncio.to_thread(apply_block_edits, version_file(store, base).read_bytes(), edits)

@@ -204,3 +204,35 @@ def test_failed_apply_marks_instruction_needs_human(doc, team, llm, monkeypatch)
     i = store.get_instructions(job.id)[0]
     assert i.status == "needs_human" and "ambigu" in i.response
     assert "result_version_id" not in job.params
+
+
+def test_done_instruction_points_at_the_edited_block(doc, team, llm):  # noqa: F811
+    store, v, blocks = doc
+    replies, _ = llm
+    replies["supervisor"].append({"instructions": [{"text": "Pakai kata baku untuk menganalisa", "quote": ""}]})
+    import agentorium.docpipe.materials as m
+
+    cands = [blocks[KASIR].id, blocks[ANALISA].id]
+    orig_locate, orig = m.locate, ScriptedLLM.complete_json
+    m.locate = lambda store, vid, instr: {"block_ids": [], "candidate_block_ids": cands}
+
+    async def complete_json(self, system, messages, schema, *, purpose=""):
+        if self.role == "worker" and not self.replies["worker"]:
+            iid = store.get_instructions(store.list_jobs(v.id)[0].id)[0].id
+            if f"[{blocks[ANALISA].id}]" in messages[-1]["content"]:
+                self.replies["worker"].append({"edits": [{"block_id": blocks[ANALISA].id,
+                                                          "new_text": ANALISA.replace("menganalisa", "menganalisis"),
+                                                          "source_ids": [iid], "reason": "baku"}], "skipped": [],
+                                               "responses": [{"instruction_id": iid, "status": "done", "response": "ok"}]})
+                self.replies["supervisor"].append({"verdicts": [{"index": 0, "verdict": "approve"}]})
+            else:
+                self.replies["worker"].append({"edits": [], "skipped": [], "responses": []})
+        return await orig(self, system, messages, schema, purpose=purpose)
+
+    ScriptedLLM.complete_json = complete_json
+    try:
+        job = store.get_job(run(lambda: start_instructed_revision(v.id, notes="baku", files=[], use_comments=False)).id)
+    finally:
+        ScriptedLLM.complete_json, m.locate = orig, orig_locate
+    i = store.get_instructions(job.id)[0]
+    assert i.status == "done" and i.block_ids == [blocks[ANALISA].id]

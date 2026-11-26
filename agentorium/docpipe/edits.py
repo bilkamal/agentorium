@@ -53,7 +53,8 @@ def validate_edit(old: str, new: str, basis_texts: list[str], doc_texts: list[st
     basis = set().union(*(_tokens(t) for t in basis_texts)) if basis_texts else set()
     old_t, new_t = _tokens(old), _tokens(new)
     dropped = sorted(old_t - new_t - basis)
-    if dropped:
+    grounded = (new_t - old_t) & basis  # "the right value is 540" replaces 450 without naming it
+    if len(dropped) > len(grounded):
         return f"angka/tanggal berubah tanpa dasar: {', '.join(dropped)}"
     known = basis | (set().union(*(_tokens(t) for t in doc_texts)) if doc_texts else set())
     added = sorted(new_t - old_t - known)
@@ -112,6 +113,14 @@ def carry_markup(old_md: str, old_plain: str, new_plain: str) -> str | None:
     return result
 
 
+_CRITIC_COMMENT = re.compile(r"\{>>.*?<<\}", re.S)
+
+
+def _strip_critic(md: str) -> str:
+    """Drop comment markup ({==anchor==}{>>comment<<}) adeu adds to the projection; targets are matched without it."""
+    return _CRITIC_COMMENT.sub("", md).replace("{==", "").replace("==}", "")
+
+
 def _projections(docx: bytes) -> dict[str, str]:
     """Plain paragraph text → adeu's markdown projection of that paragraph (bold/italic markers)."""
     import docx as pydocx
@@ -126,7 +135,7 @@ def _projections(docx: bytes) -> dict[str, str]:
             par = Paragraph(el, doc)
             plain = par.text
             if plain and plain not in out:
-                out[plain] = build_paragraph_text(par, {})
+                out[plain] = _strip_critic(build_paragraph_text(par, {}))
     except Exception as exc:  # projection is an optimisation; plain targets still work
         log.warning("paragraph projection failed: %s", exc)
     return out
