@@ -42,7 +42,8 @@ class OfficeBridge:
                 return s
             doc = store.get_document(job.document_id)
             version = store.get_version(job.version_id)
-            kind = {"review": "Review", "revision": "Revisi", "instructed_revision": "Revisi dari bahan"}.get(job.type, job.type)
+            kind = {"review": "Review", "revision": "Revisi", "instructed_revision": "Revisi dari bahan",
+                    "update": "Update berkala"}.get(job.type, job.type)
             title = f"{kind}: {doc.title if doc else '?'} v{version.version_no if version else '?'}"
             s = self.orch.create_session(kind="external", title=title)
             fresh = store.get_job(job.id) or job
@@ -102,7 +103,7 @@ class OfficeBridge:
     # ---------------------------------------------------------- job events
     @_safe
     def on_job_event(self, job: Job, event: str, payload: dict) -> None:
-        if job is None or job.type not in ("review", "revision", "instructed_revision"):
+        if job is None or job.type not in ("review", "revision", "instructed_revision", "update"):
             return
         sup = (registry.by_role("supervisor")[:1] or [None])[0]
         agent = sup.id if sup else ""

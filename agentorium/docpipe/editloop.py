@@ -17,7 +17,8 @@ class EditOutcome:
     extra: dict = field(default_factory=dict)               # other keys of the last worker reply
 
 
-def _clean(raw, blocks_by_id, basis: dict[str, str], doc_texts: list[str], rejected: list) -> list[dict]:
+def _clean(raw, blocks_by_id, basis: dict[str, str], doc_texts: list[str], rejected: list, check=None,
+           default_source: str | None = None) -> list[dict]:
     out: dict[str, dict] = {}
     for r in raw if isinstance(raw, list) else []:
         if not isinstance(r, dict):
@@ -29,13 +30,17 @@ def _clean(raw, blocks_by_id, basis: dict[str, str], doc_texts: list[str], rejec
         new = str(r.get("new_text") or "").strip()
         sids = [str(s) for s in (r.get("source_ids") or r.get("finding_ids") or r.get("instruction_ids") or [])
                 if str(s) in basis]
+        if not sids and default_source:
+            sids = [default_source]
         e = {"block_id": bid, "new_text": new, "source_ids": sids, "reason": str(r.get("reason") or "")}
         if new == block.text:
             continue
         if not sids:
             rejected.append({**e, "note": "validator: edit tanpa dasar yang dikenal"})
             continue
-        why = validate_edit(block.text, new, [basis[s] for s in sids], doc_texts)
+        why = (check(block, e) if check else validate_edit(block.text, new, [basis[s] for s in sids], doc_texts))
+        if not why and e["new_text"] == block.text:
+            continue
         if why:
             rejected.append({**e, "note": f"validator: {why}"})
             continue
@@ -45,7 +50,8 @@ def _clean(raw, blocks_by_id, basis: dict[str, str], doc_texts: list[str], rejec
 
 async def edit_loop(*, wllm, sllm, worker_system: str, user_for, section_path: str, blocks_by_id: dict,
                     basis: dict[str, str], doc_texts: list[str], purpose: str, hooks=None, job=None, task=None,
-                    worker=None, supervisor=None, schema=None) -> EditOutcome:
+                    worker=None, supervisor=None, schema=None, check=None, default_source: str | None = None,
+                    supervisor_context: str = "") -> EditOutcome:
     """`user_for(feedback)` builds the worker prompt; `basis` maps source id → text the edits may rely on."""
     res = EditOutcome()
     schema = schema or prompts.EDIT_SCHEMA
@@ -54,14 +60,15 @@ async def edit_loop(*, wllm, sllm, worker_system: str, user_for, section_path: s
     res.extra = {k: v for k, v in reply.items() if k not in ("edits", "skipped")}
     res.skipped = [{"source_id": str(s.get("source_id") or s.get("finding_id") or s.get("instruction_id") or ""),
                     "reason": str(s.get("reason") or "")} for s in reply.get("skipped") or [] if isinstance(s, dict)]
-    candidates = _clean(reply.get("edits"), blocks_by_id, basis, doc_texts, res.rejected)
+    candidates = _clean(reply.get("edits"), blocks_by_id, basis, doc_texts, res.rejected, check, default_source)
     rounds = 0
     while candidates:
         if hooks:
             hooks.submitted(job, task, worker, supervisor, len(candidates))
         verdict_reply = await sllm.complete_json(
             prompts.EDIT_SUPERVISOR_SYSTEM,
-            [{"role": "user", "content": prompts.edit_supervisor_user(section_path, blocks_by_id, candidates, basis)}],
+            [{"role": "user", "content": supervisor_context
+              + prompts.edit_supervisor_user(section_path, blocks_by_id, candidates, basis)}],
             prompts.SUPERVISOR_SCHEMA, purpose=f"{purpose}_verdict")
         verdicts = {}
         for v in verdict_reply.get("verdicts") or []:
@@ -89,6 +96,6 @@ async def edit_loop(*, wllm, sllm, worker_system: str, user_for, section_path: s
                                          schema, purpose=f"{purpose}_revise")
         # only the edits the supervisor asked to revise go back to it; re-sent approved edits are ignored
         wanted = {e["block_id"] for e, _ in to_revise}
-        candidates = [e for e in _clean(reply.get("edits"), blocks_by_id, basis, doc_texts, res.rejected)
-                      if e["block_id"] in wanted]
+        candidates = [e for e in _clean(reply.get("edits"), blocks_by_id, basis, doc_texts, res.rejected, check,
+                                        default_source) if e["block_id"] in wanted]
     return res

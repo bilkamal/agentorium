@@ -51,3 +51,11 @@ def test_docs_js_wires_revision_and_compare(client):
                    "/compare/", "/redline", "variant=tracked"):
         assert marker in js, marker
     assert "innerHTML = `" not in js
+
+
+def test_update_controls_present_and_wired(client):
+    html = client.get("/").text
+    for marker in ('id="update-form"', 'id="upd-period"', 'id="upd-files"', 'id="upd-notes"', 'id="upd-start"'):
+        assert marker in html, marker
+    js = client.get("/static/docs.js").text
+    assert "/updates" in js and "kind_update" in js and "'update'" in js
