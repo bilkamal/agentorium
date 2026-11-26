@@ -35,3 +35,19 @@ def test_docs_js_wires_review_and_search(client):
 
 def test_app_js_exposes_open_session(client):
     assert "window.Office" in client.get("/static/app.js").text
+
+
+def test_revision_controls_present(client):
+    html = client.get("/").text
+    for marker in ('id="doc-revise"', 'id="materials-form"', 'id="rev-notes"', 'id="rev-files"', 'id="rev-comments"',
+                   'id="rev-status"', 'id="changes-table"', 'id="followup-table"', 'id="followup-download"',
+                   'id="compare-form"', 'id="cmp-a"', 'id="cmp-b"', 'id="cmp-redline"'):
+        assert marker in html, marker
+
+
+def test_docs_js_wires_revision_and_compare(client):
+    js = client.get("/static/docs.js").text
+    for marker in ("/revisions", "/instructed-revisions", "/changes", "/instructions", "/followup.docx",
+                   "/compare/", "/redline", "variant=tracked"):
+        assert marker in js, marker
+    assert "innerHTML = `" not in js

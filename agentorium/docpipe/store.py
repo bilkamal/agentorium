@@ -13,7 +13,7 @@ from pathlib import Path
 from ..config import settings
 import numpy as np
 
-from .models import Block, Chunk, Document, Fact, Finding, Job, ParsedDoc, Section, Task, Version
+from .models import Block, Change, Chunk, Instruction, Document, Fact, Finding, Job, ParsedDoc, Section, Task, Version
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY, title TEXT NOT NULL, label TEXT NOT NULL DEFAULT '',
@@ -56,13 +56,25 @@ CREATE INDEX IF NOT EXISTS findings_by_job ON findings(job_id, ordinal);
 CREATE TABLE IF NOT EXISTS facts(id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
   version_id TEXT NOT NULL, block_id TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL,
   unit TEXT NOT NULL DEFAULT '', quote TEXT NOT NULL, ordinal INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS changes(id TEXT PRIMARY KEY, version_id TEXT NOT NULL REFERENCES versions(id) ON DELETE CASCADE,
+  job_id TEXT, block_uid TEXT NOT NULL, block_id TEXT NOT NULL, old_text TEXT NOT NULL, new_text TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '', source_kind TEXT NOT NULL, source_ids TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL,
+  note TEXT, ordinal INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS changes_by_version ON changes(version_id, ordinal);
+CREATE TABLE IF NOT EXISTS instructions(id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  ordinal INTEGER NOT NULL, source TEXT NOT NULL, author TEXT NOT NULL DEFAULT '', text TEXT NOT NULL,
+  quote TEXT NOT NULL DEFAULT '', block_ids TEXT NOT NULL DEFAULT '[]', candidate_block_ids TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL, response TEXT NOT NULL DEFAULT '');
+CREATE INDEX IF NOT EXISTS instructions_by_job ON instructions(job_id, ordinal);
 """
 
-MIGRATIONS = {"versions": [("index_status", "TEXT NOT NULL DEFAULT 'none'"), ("index_error", "TEXT")]}
+MIGRATIONS = {"versions": [("index_status", "TEXT NOT NULL DEFAULT 'none'"), ("index_error", "TEXT"),
+                           ("tracked_path", "TEXT"), ("created_by_job", "TEXT")]}
 
 JOB_FIELDS = ("status", "params", "total_tasks", "error", "started_at", "finished_at", "resume_at")
 TASK_FIELDS = ("status", "attempts", "error", "output")
-VERSION_FIELDS = ("status", "error", "warnings", "original_path", "file_path", "note", "index_status", "index_error")
+VERSION_FIELDS = ("status", "error", "warnings", "original_path", "file_path", "note", "index_status", "index_error",
+                  "tracked_path")
 
 
 class _Result:
@@ -177,7 +189,7 @@ class Store:
         return Version(**data)
 
     def add_version(self, document_id: str, *, source: str, filename: str, parent_version_id: str | None,
-                    note: str = "") -> Version:
+                    note: str = "", created_by_job: str | None = None) -> Version:
         ext = Path(filename).suffix.lower()
         with self._lock, self._db:
             n = self._db.execute("SELECT COALESCE(MAX(version_no),0)+1 FROM versions WHERE document_id=?",
@@ -185,12 +197,17 @@ class Store:
             v = Version(id=_new_id(), document_id=document_id, version_no=n, source=source,
                         parent_version_id=parent_version_id, filename=filename,
                         file_path=f"docs/{document_id}/v{n}{ext}", original_path=None, status="processing",
-                        error=None, warnings=[], note=note, created_at=time.time())
+                        error=None, warnings=[], note=note, created_at=time.time(), created_by_job=created_by_job)
             row = asdict(v)
             row["warnings"] = json.dumps(v.warnings)
             cols = ",".join(row)
             self._db.execute(f"INSERT INTO versions({cols}) VALUES({','.join('?' * len(row))})", tuple(row.values()))
         return v
+
+    def version_by_job(self, job_id: str) -> Version | None:
+        r = self._db.execute("SELECT id FROM versions WHERE created_by_job=? ORDER BY version_no DESC LIMIT 1",
+                             (job_id,)).fetchone()
+        return self.get_version(r[0]) if r else None
 
     def update_version(self, version_id: str, **fields) -> Version:
         unknown = set(fields) - set(VERSION_FIELDS)
@@ -408,6 +425,56 @@ class Store:
     def count_findings(self, job_id: str) -> dict[str, int]:
         rows = self._db.execute("SELECT status, COUNT(*) FROM findings WHERE job_id=? GROUP BY status", (job_id,))
         return {r[0]: r[1] for r in rows}
+
+    CHANGE_COLS = ("version_id", "job_id", "block_uid", "block_id", "old_text", "new_text", "reason", "source_kind",
+                   "source_ids", "status", "note")
+
+    def add_changes(self, rows: list[dict]) -> list[str]:
+        return self._insert_rows("changes", self.CHANGE_COLS,
+                                 [{"reason": "", **r, "source_ids": json.dumps(list(r.get("source_ids") or []))}
+                                  for r in rows])
+
+    def get_changes(self, version_id: str | None = None, job_id: str | None = None) -> list[Change]:
+        q, args = "SELECT * FROM changes WHERE 1=1", []
+        if version_id:
+            q += " AND version_id=?"
+            args.append(version_id)
+        if job_id:
+            q += " AND job_id=?"
+            args.append(job_id)
+        rows = self._db.execute(q + " ORDER BY ordinal", args).fetchall()
+        return [Change(**{**{k: r[k] for k in r.keys() if k != "ordinal"}, "source_ids": json.loads(r["source_ids"])})
+                for r in rows]
+
+    def add_instructions(self, rows: list[dict]) -> list[Instruction]:
+        with self._db:
+            start = self._db.execute("SELECT COUNT(*) FROM instructions WHERE job_id=?",
+                                     (rows[0]["job_id"],)).fetchone()[0] if rows else 0
+            for i, r in enumerate(rows):
+                self._db.execute(
+                    "INSERT INTO instructions(id,job_id,ordinal,source,author,text,quote,block_ids,candidate_block_ids,"
+                    "status,response) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    (_new_id(), r["job_id"], start + i, r["source"], r.get("author") or "", r["text"],
+                     r.get("quote") or "", json.dumps(r.get("block_ids") or []),
+                     json.dumps(r.get("candidate_block_ids") or []), r.get("status") or "pending",
+                     r.get("response") or ""))
+        return self.get_instructions(rows[0]["job_id"]) if rows else []
+
+    def get_instructions(self, job_id: str) -> list[Instruction]:
+        rows = self._db.execute("SELECT * FROM instructions WHERE job_id=? ORDER BY ordinal", (job_id,)).fetchall()
+        return [Instruction(**{**dict(r), "block_ids": json.loads(r["block_ids"]),
+                               "candidate_block_ids": json.loads(r["candidate_block_ids"])}) for r in rows]
+
+    def update_instruction(self, instruction_id: str, **fields) -> None:
+        allowed = {"status", "response", "block_ids", "candidate_block_ids"}
+        if set(fields) - allowed:
+            raise ValueError(f"cannot update {sorted(set(fields) - allowed)}")
+        for k in ("block_ids", "candidate_block_ids"):
+            if k in fields:
+                fields[k] = json.dumps(fields[k])
+        with self._db:
+            self._db.execute(f"UPDATE instructions SET {','.join(f'{k}=?' for k in fields)} WHERE id=?",
+                             (*fields.values(), instruction_id))
 
     def add_facts(self, rows: list[dict]) -> list[str]:
         return self._insert_rows("facts", self.FACT_COLS, [{"unit": "", **r} for r in rows])

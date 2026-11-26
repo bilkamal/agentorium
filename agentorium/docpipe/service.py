@@ -99,7 +99,42 @@ def restore(store: Store, version_id: str) -> Version:
         raise
 
 
+def create_revised_version(store: Store, base_version_id: str, tracked: bytes, clean: bytes, *, source: str,
+                           note: str, job_id: str | None = None) -> Version:
+    """New version from an edited copy of `base`: clean file (changes accepted) + tracked copy for Word."""
+    base = store.get_version(base_version_id)
+    if base is None or base.status != "ready":
+        raise IngestError("Versi dasar tidak ditemukan atau belum siap")
+    new = store.add_version(base.document_id, source=source, filename=base.filename, parent_version_id=base.id,
+                            note=note, created_by_job=job_id)
+    path = _abs(new.file_path)
+    tracked_rel = new.file_path[: -len(path.suffix)] + ".tracked.docx"
+    written: list[Path] = []
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(clean)
+        written.append(path)
+        _abs(tracked_rel).write_bytes(tracked)
+        written.append(_abs(tracked_rel))
+        parsed = parse_docx(path)
+        prev_blocks = store.get_blocks(base.id)
+        if len(prev_blocks) == len(parsed.blocks):  # edits replace text in place: same block layout
+            for b, old in zip(parsed.blocks, prev_blocks):
+                b.uid = old.uid
+        else:
+            assign_uids(parsed.blocks, prev_blocks)
+        store.save_structure(new.id, parsed)
+        return store.update_version(new.id, status="ready", tracked_path=tracked_rel, warnings=parsed.warnings)
+    except Exception:
+        for f in written:
+            f.unlink(missing_ok=True)
+        store.delete_version(new.id)
+        raise
+
+
 def version_file(store: Store, version: Version, variant: str = "current") -> Path:
     if variant == "original" and version.original_path:
         return _abs(version.original_path)
+    if variant == "tracked":
+        return _abs(version.tracked_path) if version.tracked_path else _abs(version.file_path + ".missing")
     return _abs(version.file_path)

@@ -23,3 +23,15 @@ def _no_real_embedding_model():
     embed.set_embedder(None)
     yield
     embed._embedder, embed._embedder_set = old
+
+
+@pytest.fixture(autouse=True)
+def _never_call_real_claude(request):
+    """Unit tests must never reach the real Claude Code CLI (it spends the user's quota)."""
+    if request.node.get_closest_marker("live"):
+        yield
+        return
+    old = settings.claude_bin
+    object.__setattr__(settings, "claude_bin", "/nonexistent/claude-disabled-in-unit-tests")
+    yield
+    object.__setattr__(settings, "claude_bin", old)

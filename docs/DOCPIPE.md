@@ -1,6 +1,6 @@
 # DocPipe — review & revisi dokumen di Agentorium
 
-Fork ini menambahkan tab **Dokumen** ke Agentorium: unggah DOCX/PDF, simpan setiap versi, lihat outline dan isi per bagian, unduh, kembalikan ke versi lama, cari isi dokumen (RAG), dan **review per bab oleh tim agen** (worker + supervisor dari ⚙ Pengaturan tim). Revisi otomatis dan update berkala menyusul di fase 3–4 (lihat `docs/superpowers/specs/2026-11-26-agentorium-docpipe-design.md`).
+Fork ini menambahkan tab **Dokumen** ke Agentorium: unggah DOCX/PDF, simpan setiap versi, lihat outline dan isi per bagian, unduh, kembalikan ke versi lama, cari isi dokumen (RAG), **review per bab oleh tim agen** (worker + supervisor dari ⚙ Pengaturan tim), **revisi otomatis** dari temuan, **revisi dari bahan revisi** (catatan, berkas, komentar Word) dengan tabel tindak lanjut, dan **bandingkan versi**. Update berkala menyusul di fase 4 (lihat `docs/superpowers/specs/2026-11-26-agentorium-docpipe-design.md`).
 
 ## Status
 
@@ -8,8 +8,8 @@ Fork ini menambahkan tab **Dokumen** ke Agentorium: unggah DOCX/PDF, simpan seti
 |---|---|---|
 | 1 | Adapter Claude Code, penyimpanan, ingest DOCX/PDF, versi, rollback, tab Dokumen | selesai |
 | 2 | RAG lokal + review per bab | selesai |
-| 3 | Revisi otomatis + revisi dari bahan revisi | berikutnya |
-| 4 | Update laporan berkala | belum |
+| 3 | Revisi otomatis + revisi dari bahan revisi + bandingkan versi | selesai |
+| 4 | Update laporan berkala | berikutnya |
 
 ## Instalasi
 
@@ -61,6 +61,31 @@ Cara kerjanya:
 - **Cek konsistensi antarbab** di akhir: fakta dengan nama sama tetapi nilai berbeda (format angka Indonesia dikenali, `1.200` = `1200`) dinilai supervisor.
 - **Kuota habis** → review *dijeda* dan lanjut sendiri setelah `OFFICE_RATE_LIMIT_WAIT` detik; bab yang sudah selesai tidak diulang. **Server restart** → review dilanjutkan otomatis.
 
+## Revisi otomatis
+
+Setelah review selesai, tombol **Revisi otomatis dari temuan** membuat versi baru:
+
+- Hanya untuk **DOCX** (PDF ditolak). Temuan *bahasa, konsistensi, struktur* yang valid dikerjakan per bab; temuan **substansi tidak pernah diubah otomatis** — muncul sebagai *saran* di tabel Perubahan.
+- Worker menulis teks baru per paragraf → **validator kode** menolak edit yang mengubah/menambah angka atau tanggal tanpa dasar, teks kosong, atau perubahan panjang yang ekstrem → supervisor menyetujui / menolak / minta perbaiki (maks. `OFFICE_MAX_REVISIONS`).
+- Edit diterapkan dengan [adeu](https://github.com/dealfluence/adeu) sebagai **tracked changes**; format (tebal, miring, gaya) dipertahankan. Paragraf yang teksnya muncul lebih dari sekali tidak diubah (→ *perlu dicek*).
+- Hasil: versi baru `v<N+1>` (sumber *revisi AI*, induk = versi yang direvisi) berisi semua perubahan diterima, plus **Unduh tracked changes** (`v<N+1>.tracked.docx`) untuk dicek di Word. Revisi atas versi lama tetap mendapat nomor berikutnya; versi lama tidak pernah ditimpa.
+- Tabel **Perubahan**: lokasi, teks lama → baru, alasan, status (*diterapkan, perlu dicek, ditolak, saran*). Temuan yang dilewati worker tidak hilang — tercatat *perlu dicek* beserta alasannya.
+
+## Revisi dari bahan revisi
+
+Panel **Revisi dari bahan revisi**: tempel catatan, unggah berkas (txt, md, docx, pdf — boleh beberapa), dan/atau centang **Pakai komentar Word di dokumen ini**.
+
+1. Catatan dan berkas dipecah supervisor menjadi instruksi (satu instruksi = satu perubahan). Komentar Word langsung menjadi instruksi di paragraf tempat komentar itu menempel.
+2. Setiap instruksi dicari lokasinya: kutipan persis dulu, lalu pencarian RAG (kandidat). Instruksi yang **tidak ditemukan lokasinya tetap dilaporkan** (*perlu dicek manual*).
+3. Worker mengerjakan instruksi per bab lewat loop yang sama (validator + supervisor); nilai baru (angka, nama) hanya boleh dari instruksinya.
+4. **Tabel tindak lanjut** — No, Sumber, Instruksi, Status (*selesai / tidak dikerjakan / perlu dicek manual*), Tanggapan, Lokasi — tampil di web dan bisa diunduh sebagai DOCX. Instruksi hanya *selesai* bila perubahannya benar-benar masuk ke DOCX.
+
+Satu versi hanya boleh punya satu job revisi yang berjalan (permintaan kedua → 409).
+
+## Bandingkan versi
+
+Kotak **Bandingkan versi**: pilih dua versi → daftar paragraf *diubah / ditambah / dihapus* (dicocokkan lewat `uid` paragraf) dan **Unduh redline (DOCX)** — versi kedua sebagai tracked changes terhadap versi pertama (keduanya harus DOCX).
+
 ## Pencarian (RAG)
 
 Setiap versi diindeks otomatis setelah diunggah: dipotong per bab (±1.600 karakter, tidak melewati batas bab), dicari dengan **kata kunci (SQLite FTS5)** dan **makna (embedding e5, dihitung di CPU, vektor disimpan di SQLite)**, lalu digabung (Reciprocal Rank Fusion). Kotak **Cari di dokumen** di tab Dokumen menampilkan hasilnya beserta sumber peringkat (FTS / vektor).
@@ -74,7 +99,8 @@ Semua data ada di `data/` (atau `OFFICE_DATA_DIR`):
 - `data/docpipe.db` — SQLite: dokumen, versi, bagian (section), blok (paragraf/sel tabel), potongan indeks + vektor, job review, temuan, fakta.
 - `data/models/` — cache model embedding.
 - `data/evals/` — hasil evaluasi review.
-- `data/docs/<doc_id>/v<N>.docx` — file setiap versi. Bila DOCX berisi tracked changes, versi kerja = semua perubahan diterima, dan file asli disimpan sebagai `v<N>.original.docx`.
+- `data/docs/<doc_id>/v<N>.docx` — file setiap versi. Bila DOCX berisi tracked changes, versi kerja = semua perubahan diterima, dan file asli disimpan sebagai `v<N>.original.docx`. Versi hasil revisi juga punya `v<N>.tracked.docx`.
+- Tabel `changes` (log perubahan per paragraf) dan `instructions` (instruksi dari bahan revisi + tindak lanjutnya).
 
 Setiap blok punya `uid` yang dibawa lintas versi (paragraf yang sama atau mirip ≥ 80% tetap ber-uid sama), sehingga riwayat per paragraf bisa ditelusuri.
 
@@ -83,14 +109,18 @@ Setiap blok punya `uid` yang dibawa lintas versi (paragraf yang sama atau mirip 
 `/api/docs` — `POST` unggah · `GET` daftar · `GET/DELETE /{id}` · `POST /{id}/versions` versi baru ·
 `GET /versions/{vid}/outline` · `GET /versions/{vid}/blocks?section_id=` · `GET /versions/{vid}/download?variant=current|original` · `POST /versions/{vid}/restore` ·
 `GET /versions/{vid}/search?q=&k=` · `POST /versions/{vid}/reviews` `{"categories": [...]}` · `GET /versions/{vid}/jobs` ·
-`GET /jobs/{job_id}` · `GET /jobs/{job_id}/findings?status=&category=` · `POST /jobs/{job_id}/cancel`.
+`GET /jobs/{job_id}` · `GET /jobs/{job_id}/findings?status=&category=` · `POST /jobs/{job_id}/cancel` ·
+`POST /jobs/{review_job_id}/revisions` `{"categories"?: [...]}` · `POST /versions/{vid}/instructed-revisions` (multipart `notes`, `files`, `use_comments`) ·
+`GET /jobs/{job_id}/changes` · `GET /versions/{vid}/changes` · `GET /jobs/{job_id}/instructions` · `GET /jobs/{job_id}/followup.docx` ·
+`GET /versions/{vid}/download?variant=tracked` · `GET /versions/{a}/compare/{b}` · `GET /versions/{a}/compare/{b}/redline`.
 
 ## Test
 
 ```bash
 .venv/bin/pytest            # semua test (tanpa memanggil Claude)
 .venv/bin/pytest -m live    # uji nyata ke Claude Code (butuh login)
-.venv/bin/python scripts/eval_review.py --model haiku   # ukur kualitas review (memakai kuota Claude)
+.venv/bin/python scripts/eval_review.py --model haiku     # ukur kualitas review (memakai kuota Claude)
+.venv/bin/python scripts/eval_revision.py --model haiku   # ukur revisi otomatis + revisi dari bahan (memakai kuota)
 ```
 
 ### Hasil evaluasi
@@ -108,6 +138,22 @@ Hasil 26 Nov 2026 (Claude Code `haiku` untuk supervisor dan 2 worker, indeks e5 
 | Durasi review | ±3 menit (run pertama total 23 menit karena model embedding diunduh dulu) |
 
 Terlewat: kalimat penutup surat ("Demikian laporan ini kami sampaikan…") di tengah bab Pelaksanaan Kegiatan.
+
+### Hasil evaluasi revisi
+
+`scripts/eval_revision.py` memakai laporan uji yang sama: review → revisi otomatis → revisi dari catatan berisi 5 instruksi (salah satunya tentang bagian yang tidak ada).
+
+Hasil 26 Nov 2026 (Claude Code `haiku`):
+
+| Ukuran | Hasil |
+|---|---|
+| Ejaan sisipan diperbaiki di versi baru | **12/12** |
+| Paragraf tanpa temuan yang ikut berubah | **0** |
+| Angka/tanggal yang hilang | **0** |
+| Struktur blok | sama dengan versi asal |
+| Perubahan | 12 diterapkan · 13 perlu dicek (mis. konsistensi yang nilai benarnya tak bisa dipastikan) · 1 ditolak · 7 saran substansi |
+| Revisi dari catatan | 4 selesai (Rp 540 juta, 125 responden, 21 Oktober, Unit Layanan Anggota) · instruksi "Lampiran" → *tidak dikerjakan* dengan alasan |
+| Durasi | review ±3 menit · revisi otomatis ±1 menit · revisi dari bahan ±1 menit |
 
 ## Git
 

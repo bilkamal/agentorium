@@ -20,10 +20,12 @@ from .registry import COLORS, HAIR, ROLES, RegistryError, registry
 
 @contextlib.asynccontextmanager
 async def lifespan(_app: FastAPI):
-    from .docpipe import office, review
+    from .docpipe import instructed, office, review, revise
     from .docpipe.jobs import resume_jobs, runner
 
     runner.register("section_review", review.review_task)
+    runner.register("revision_section", revise.revision_task)
+    runner.register("instructed_section", instructed.instructed_task)
     office.install(orchestrator)
     await resume_jobs()  # continue document jobs interrupted by a restart
     yield

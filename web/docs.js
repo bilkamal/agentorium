@@ -29,6 +29,22 @@
       pick_category: 'Pilih minimal satu kategori.', vs: 'vs',
       search_title: 'Cari di dokumen (uji RAG)', search: 'Cari', search_ph: 'mis. jumlah responden', no_results: 'Tidak ada hasil.',
       idx_none: 'belum diindeks', idx_indexing: 'sedang diindeks', idx_ready: 'indeks siap', idx_fts_only: 'indeks kata kunci saja', idx_failed: 'indeks gagal',
+      revision: 'Revisi', revise_auto: 'Revisi otomatis dari temuan', revise_hint: 'Bahasa, konsistensi, dan struktur diperbaiki; substansi jadi saran.',
+      materials_title: 'Revisi dari bahan revisi (catatan, berkas, komentar Word)', notes_ph: 'Tempel catatan revisi dari atasan/klien…',
+      material_files: 'Pilih berkas bahan (txt, md, docx, pdf)', use_comments: 'Pakai komentar Word di dokumen ini', materials_start: 'Mulai revisi dari bahan',
+      kind_revision: 'Revisi otomatis', kind_instructed_revision: 'Revisi dari bahan', rjob_finalizing: 'menerapkan perubahan ke DOCX',
+      result_version: 'Hasil: v{n}', result_none: 'Tidak ada perubahan yang bisa diterapkan — tidak ada versi baru.', open_version: 'Lihat v{n}',
+      download_clean: 'Unduh bersih', download_tracked: 'Unduh tracked changes', download_redline: 'Unduh redline',
+      followup: 'Tindak lanjut', followup_download: 'Unduh tabel tindak lanjut (DOCX)', col_source: 'Sumber', col_instruction: 'Instruksi', col_response: 'Tanggapan',
+      in_pending: 'belum diproses', in_done: 'selesai', in_not_applicable: 'tidak dikerjakan', in_needs_human: 'perlu dicek manual',
+      src_notes: 'Catatan', src_comment: 'Komentar Word', src_file: 'Berkas', maybe: 'kemungkinan',
+      changes: 'Perubahan', col_old: 'Teks lama', col_new: 'Teks baru', col_reason: 'Alasan / catatan',
+      ch_applied: 'diterapkan', ch_needs_human: 'perlu dicek', ch_rejected: 'ditolak', ch_suggestion: 'saran',
+      changes_counts: 'diterapkan {applied} · perlu dicek {needs_human} · ditolak {rejected} · saran {suggestion}',
+      followup_counts: 'selesai {done} · tidak dikerjakan {not_applicable} · perlu dicek {needs_human}',
+      no_changes: 'Tidak ada perubahan.', files_n: '{n} berkas', need_material: 'Isi catatan, pilih berkas, atau centang komentar Word.',
+      compare: 'Bandingkan versi', compare_go: 'Bandingkan', compare_redline: 'Unduh redline (DOCX)', cmp_same: 'Pilih dua versi yang berbeda.',
+      cmp_added: 'ditambah', cmp_removed: 'dihapus', cmp_changed: 'diubah', cmp_summary: '{changed} diubah · {added} ditambah · {removed} dihapus', cmp_none: 'Isi kedua versi sama.',
     },
     en: {
       documents: 'Documents', upload: 'Upload DOCX/PDF', title_ph: 'Title (optional)', label_ph: 'Label, e.g. monthly report (optional)',
@@ -55,6 +71,22 @@
       pick_category: 'Pick at least one category.', vs: 'vs',
       search_title: 'Search the document (RAG test)', search: 'Search', search_ph: 'e.g. number of respondents', no_results: 'No results.',
       idx_none: 'not indexed', idx_indexing: 'indexing', idx_ready: 'index ready', idx_fts_only: 'keyword index only', idx_failed: 'index failed',
+      revision: 'Revision', revise_auto: 'Revise automatically from findings', revise_hint: 'Language, consistency and structure are fixed; substance becomes suggestions.',
+      materials_title: 'Revise from revision materials (notes, files, Word comments)', notes_ph: 'Paste revision notes from your manager/client…',
+      material_files: 'Choose material files (txt, md, docx, pdf)', use_comments: 'Use the Word comments in this document', materials_start: 'Start revision from materials',
+      kind_revision: 'Automatic revision', kind_instructed_revision: 'Revision from materials', rjob_finalizing: 'applying changes to the DOCX',
+      result_version: 'Result: v{n}', result_none: 'No change could be applied — no new version.', open_version: 'View v{n}',
+      download_clean: 'Download clean', download_tracked: 'Download tracked changes', download_redline: 'Download redline',
+      followup: 'Follow-up', followup_download: 'Download follow-up table (DOCX)', col_source: 'Source', col_instruction: 'Instruction', col_response: 'Response',
+      in_pending: 'pending', in_done: 'done', in_not_applicable: 'not done', in_needs_human: 'needs manual check',
+      src_notes: 'Notes', src_comment: 'Word comment', src_file: 'File', maybe: 'maybe',
+      changes: 'Changes', col_old: 'Old text', col_new: 'New text', col_reason: 'Reason / note',
+      ch_applied: 'applied', ch_needs_human: 'needs check', ch_rejected: 'rejected', ch_suggestion: 'suggestion',
+      changes_counts: 'applied {applied} · needs check {needs_human} · rejected {rejected} · suggestions {suggestion}',
+      followup_counts: 'done {done} · not done {not_applicable} · needs check {needs_human}',
+      no_changes: 'No changes.', files_n: '{n} files', need_material: 'Write notes, choose files, or tick Word comments.',
+      compare: 'Compare versions', compare_go: 'Compare', compare_redline: 'Download redline (DOCX)', cmp_same: 'Pick two different versions.',
+      cmp_added: 'added', cmp_removed: 'removed', cmp_changed: 'changed', cmp_summary: '{changed} changed · {added} added · {removed} removed', cmp_none: 'Both versions have the same content.',
     },
   };
   const lang = () => (document.documentElement.lang === 'en' ? 'en' : 'id');
@@ -64,7 +96,10 @@
     return s;
   };
 
-  const state = { docs: [], doc: null, versions: [], versionId: null, sectionId: null, sections: [], job: null, poll: null };
+  const state = { docs: [], doc: null, versions: [], versionId: null, sectionId: null, sections: [], job: null, poll: null,
+    rjob: null, rpoll: null };
+  const MUTATING = ['revision', 'instructed_revision'];
+  const isDocx = (v) => !!v && /\.docx$/i.test(v.filename || '');
   const ACTIVE = ['queued', 'running', 'paused', 'finalizing'];
 
   async function api(url, opts = {}) {
@@ -135,6 +170,7 @@
           el('button', { class: 'btn small', onclick: () => loadOutline(v.id) }, t('view')),
           el('a', { class: 'btn small', href: `/api/docs/versions/${v.id}/download` }, t('download')));
         if (v.original_path) actions.append(el('a', { class: 'btn small', href: `/api/docs/versions/${v.id}/download?variant=original` }, t('download_original')));
+        if (v.tracked_path) actions.append(el('a', { class: 'btn small', href: `/api/docs/versions/${v.id}/download?variant=tracked` }, t('download_tracked')));
         if (v.id !== state.doc.latest_version_id) actions.append(el('button', { class: 'btn small', onclick: () => restoreVersion(v) }, t('restore')));
       }
       const note = [v.note, ...v.warnings.map((w) => '⚠ ' + t('warn_' + w))].filter(Boolean).join(' ');
@@ -146,6 +182,7 @@
         el('td', { class: 'note' }, note || v.error || ''),
         actions));
     });
+    renderCompareSelects();
   }
 
   async function loadOutline(versionId) {
@@ -156,6 +193,8 @@
     $('#outline-version').textContent = v ? `v${v.version_no} · ${v.block_count} blok · ${t('idx_' + v.index_status)}` : '';
     $('#search-results').innerHTML = '';
     loadReview(versionId).catch((err) => showError(err.message));
+    loadRevision(versionId).catch((err) => showError(err.message));
+    resetCompare();
     const sections = await api(`/api/docs/versions/${versionId}/outline`);
     state.sections = sections;
     const ul = $('#doc-outline');
@@ -182,10 +221,13 @@
   }
 
   // ------------------------------------------------------------- review
-  function stopPoll() { if (state.poll) { clearTimeout(state.poll); state.poll = null; } }
+  function stopPoll() {
+    if (state.poll) { clearTimeout(state.poll); state.poll = null; }
+    if (state.rpoll) { clearTimeout(state.rpoll); state.rpoll = null; }
+  }
 
   async function loadReview(versionId) {
-    stopPoll();
+    if (state.poll) { clearTimeout(state.poll); state.poll = null; }
     state.job = null;
     renderJob(null);
     const jobs = await api(`/api/docs/versions/${versionId}/jobs`);
@@ -194,7 +236,7 @@
   }
 
   async function refreshJob(jobId) {
-    stopPoll();
+    if (state.poll) { clearTimeout(state.poll); state.poll = null; }
     const data = await api(`/api/docs/jobs/${jobId}`);
     if (data.job.version_id !== state.versionId) return;
     state.job = data;
@@ -223,6 +265,7 @@
     data.tasks.forEach((task) => prog.append(el('li', { class: task.status, title: task.error || task.heading }, task.heading)));
     $('#findings-box').hidden = false;
     $('#findings-counts').textContent = t('counts', data.counts);
+    updateRevisionButtons();
   }
 
   async function startReview() {
@@ -279,6 +322,234 @@
     await loadBlocks(section);
     const node = document.querySelector(`#doc-blocks .blk[data-id="${CSS.escape(blockId)}"]`);
     if (node) { node.classList.add('hl'); node.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+  }
+
+  // ------------------------------------------------------------- revision
+  function currentVersion() { return state.versions.find((x) => x.id === state.versionId); }
+  function versionById(id) { return state.versions.find((x) => x.id === id); }
+
+  function updateRevisionButtons() {
+    const v = currentVersion();
+    const busy = !!state.rjob && ACTIVE.includes(state.rjob.job.status);
+    const ok = !!v && v.status === 'ready' && isDocx(v) && !busy;
+    const review = state.job?.job;
+    $('#doc-revise').disabled = !ok || !review || !['done', 'partial'].includes(review.status) || !state.job.counts.valid;
+    $('#rev-start').disabled = !ok;
+    $('#revision-box').hidden = !!v && !isDocx(v);
+  }
+
+  async function loadRevision(versionId) {
+    if (state.rpoll) { clearTimeout(state.rpoll); state.rpoll = null; }
+    state.rjob = null;
+    renderRevision(null);
+    const jobs = await api(`/api/docs/versions/${versionId}/jobs`);
+    const job = jobs.find((j) => MUTATING.includes(j.type));
+    if (job && state.versionId === versionId) await refreshRevision(job.id);
+  }
+
+  async function refreshRevision(jobId) {
+    if (state.rpoll) { clearTimeout(state.rpoll); state.rpoll = null; }
+    const data = await api(`/api/docs/jobs/${jobId}`);
+    if (data.job.version_id !== state.versionId) return;
+    const wasActive = state.rjob && ACTIVE.includes(state.rjob.job.status);
+    state.rjob = data;
+    const active = ACTIVE.includes(data.job.status);
+    if (!active && wasActive) await reloadVersions();  // a new version may exist now
+    renderRevision(data);
+    if (active) state.rpoll = setTimeout(() => refreshRevision(jobId).catch((err) => showError(err.message)), 2000);
+    else {
+      loadChanges().catch((err) => showError(err.message));
+      if (data.job.type === 'instructed_revision') loadFollowup().catch((err) => showError(err.message));
+    }
+  }
+
+  async function reloadVersions() {
+    const data = await api(`/api/docs/${state.doc.id}`);
+    state.doc = data.document;
+    state.versions = data.versions;
+    renderVersions();
+  }
+
+  function renderRevision(data) {
+    const active = !!data && ACTIVE.includes(data.job.status);
+    $('#rev-cancel').hidden = !active;
+    $('#rev-office').hidden = !data?.job.params?.session_id;
+    const prog = $('#rev-progress');
+    prog.innerHTML = '';
+    const res = $('#rev-result');
+    res.innerHTML = '';
+    res.hidden = true;
+    $('#changes-box').hidden = true;
+    $('#followup-box').hidden = true;
+    updateRevisionButtons();
+    if (!data) { $('#rev-status').textContent = ''; return; }
+    const j = data.job;
+    const st = j.status === 'finalizing' ? t('rjob_finalizing') : t('job_' + j.status);
+    const parts = [t('kind_' + j.type), st, t('progress', { done: j.done_tasks + j.failed_tasks, total: j.total_tasks })];
+    if (j.failed_tasks) parts.push(t('failed_n', { n: j.failed_tasks }));
+    if (j.status === 'paused' && j.resume_at) parts.push(t('resume_at', { time: new Date(j.resume_at * 1000).toLocaleTimeString(lang() === 'en' ? 'en-GB' : 'id-ID', { timeStyle: 'short' }) }));
+    if (j.error) parts.push(j.error);
+    $('#rev-status').textContent = parts.join(' · ');
+    data.tasks.forEach((task) => prog.append(el('li', { class: task.status, title: task.error || task.heading }, task.heading)));
+    if (active) return;
+    const nv = j.result_version_id && versionById(j.result_version_id);
+    if (nv) {
+      res.append(el('b', {}, t('result_version', { n: nv.version_no })),
+        el('button', { class: 'btn small', onclick: () => loadOutline(nv.id) }, t('open_version', { n: nv.version_no })),
+        el('a', { class: 'btn small', href: `/api/docs/versions/${nv.id}/download` }, t('download_clean')),
+        el('a', { class: 'btn small', href: `/api/docs/versions/${nv.id}/download?variant=tracked` }, t('download_tracked')),
+        el('a', { class: 'btn small', href: `/api/docs/versions/${j.version_id}/compare/${nv.id}/redline` }, t('download_redline')));
+    } else if (['done', 'partial'].includes(j.status)) res.append(el('span', {}, t('result_none')));
+    res.hidden = !res.childNodes.length;
+  }
+
+  async function startRevision() {
+    if (!state.job) return;
+    showError('');
+    $('#doc-revise').disabled = true;
+    try {
+      const res = await api(`/api/docs/jobs/${state.job.job.id}/revisions`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+      await refreshRevision(res.job.id);
+    } catch (err) { showError(err.message); updateRevisionButtons(); }
+  }
+
+  async function startInstructed(e) {
+    e.preventDefault();
+    const notes = $('#rev-notes').value;
+    const files = [...$('#rev-files').files];
+    const useComments = $('#rev-comments').checked;
+    if (!notes.trim() && !files.length && !useComments) { showError(t('need_material')); return; }
+    const form = new FormData();
+    form.append('notes', notes);
+    form.append('use_comments', useComments ? 'true' : 'false');
+    files.forEach((f) => form.append('files', f));
+    showError('');
+    $('#rev-start').disabled = true;
+    try {
+      const res = await api(`/api/docs/versions/${state.versionId}/instructed-revisions`, { method: 'POST', body: form });
+      $('#materials-form').reset();
+      $('#rev-files-names').textContent = '';
+      await refreshRevision(res.job.id);
+    } catch (err) { showError(err.message); updateRevisionButtons(); }
+  }
+
+  async function cancelRevision() {
+    if (!state.rjob) return;
+    try { await api(`/api/docs/jobs/${state.rjob.job.id}/cancel`, { method: 'POST' }); await refreshRevision(state.rjob.job.id); } catch (err) { showError(err.message); }
+  }
+
+  async function openRevisionOffice() {
+    const sid = state.rjob?.job.params?.session_id;
+    if (!sid) return;
+    setView('office');
+    if (window.Office) await window.Office.openSession(sid);
+  }
+
+  async function loadChanges() {
+    if (!state.rjob) return;
+    const rows = await api(`/api/docs/jobs/${state.rjob.job.id}/changes`);
+    const counts = { applied: 0, needs_human: 0, rejected: 0, suggestion: 0 };
+    rows.forEach((c) => { counts[c.status] = (counts[c.status] || 0) + 1; });
+    $('#changes-counts').textContent = t('changes_counts', counts);
+    const tbody = $('#changes-rows');
+    tbody.innerHTML = '';
+    if (!rows.length) tbody.append(el('tr', {}, el('td', { colspan: '5', class: 'muted' }, t('no_changes'))));
+    rows.forEach((c) => {
+      const isEdit = c.status !== 'suggestion' && c.new_text;
+      tbody.append(el('tr', { onclick: () => showBlock(c.section_id, c.block_id) },
+        el('td', { class: 'loc' }, el('div', {}, c.heading_path || ''), el('small', { class: 'muted' }, c.block_id)),
+        el('td', { class: isEdit ? 'old' : '' }, c.old_text),
+        el('td', { class: 'new' }, isEdit ? c.new_text : ''),
+        el('td', {}, el('div', {}, c.reason || ''), c.note ? el('div', { class: 'muted' }, c.note) : ''),
+        el('td', {}, el('span', { class: `tag ch-${c.status}` }, t('ch_' + c.status)))));
+    });
+    $('#changes-box').hidden = false;
+  }
+
+  function sourceLabel(i) {
+    if (i.source === 'comment') return i.author ? `${t('src_comment')} (${i.author})` : t('src_comment');
+    if (i.source.startsWith('file:')) return `${t('src_file')} ${i.source.slice(5)}`;
+    return t('src_notes');
+  }
+
+  async function loadFollowup() {
+    if (!state.rjob) return;
+    const jobId = state.rjob.job.id;
+    const rows = await api(`/api/docs/jobs/${jobId}/instructions`);
+    const counts = { done: 0, not_applicable: 0, needs_human: 0, pending: 0 };
+    rows.forEach((i) => { counts[i.status] = (counts[i.status] || 0) + 1; });
+    $('#followup-counts').textContent = t('followup_counts', counts);
+    $('#followup-download').href = `/api/docs/jobs/${jobId}/followup.docx`;
+    const tbody = $('#followup-rows');
+    tbody.innerHTML = '';
+    if (!rows.length) tbody.append(el('tr', {}, el('td', { colspan: '6', class: 'muted' }, t('no_changes'))));
+    rows.forEach((i, n) => {
+      const loc = i.heading_path ? (i.block_ids.length ? i.heading_path : `${t('maybe')}: ${i.heading_path}`) : '-';
+      const target = i.block_ids[0] || i.candidate_block_ids[0];
+      tbody.append(el('tr', { onclick: () => target && showBlock(i.section_id, target) },
+        el('td', {}, String(n + 1)),
+        el('td', {}, sourceLabel(i)),
+        el('td', {}, i.text, i.quote ? el('div', { class: 'muted' }, `“${i.quote}”`) : ''),
+        el('td', {}, el('span', { class: `tag in-${i.status}` }, t('in_' + i.status))),
+        el('td', {}, i.response || ''),
+        el('td', { class: 'loc' }, loc)));
+    });
+    $('#followup-box').hidden = false;
+  }
+
+  // ------------------------------------------------------------- compare
+  function renderCompareSelects() {
+    const ready = state.versions.filter((v) => v.status === 'ready');
+    const a = $('#cmp-a');
+    const b = $('#cmp-b');
+    const keepA = a.value;
+    const keepB = b.value;
+    [a, b].forEach((s) => { s.innerHTML = ''; ready.forEach((v) => s.append(el('option', { value: v.id }, `v${v.version_no} · ${t('src_' + v.source)}`))); });
+    const cur = currentVersion();
+    const parent = cur?.parent_version_id && versionById(cur.parent_version_id);
+    const prev = ready.filter((v) => cur && v.version_no < cur.version_no).pop();
+    b.value = keepB && versionById(keepB) ? keepB : (cur?.id || '');
+    a.value = keepA && versionById(keepA) ? keepA : ((parent || prev || ready[0])?.id || '');
+    if (a.value && a.value === b.value) {  // viewing the oldest version: compare it with the newest one
+      const other = [...ready].reverse().find((v) => v.id !== a.value);
+      if (other) b.value = other.id;
+    }
+    $('#compare-box').hidden = ready.length < 2;
+  }
+
+  function resetCompare() {
+    $('#cmp-a').value = '';
+    $('#cmp-b').value = '';
+    renderCompareSelects();
+    $('#cmp-rows').innerHTML = '';
+    $('#cmp-table').hidden = true;
+    $('#cmp-summary').textContent = '';
+    $('#cmp-redline').hidden = true;
+  }
+
+  async function compareVersions(e) {
+    e.preventDefault();
+    const a = $('#cmp-a').value;
+    const b = $('#cmp-b').value;
+    if (!a || !b || a === b) { $('#cmp-summary').textContent = t('cmp_same'); return; }
+    try {
+      const data = await api(`/api/docs/versions/${a}/compare/${b}`);
+      const counts = { changed: 0, added: 0, removed: 0 };
+      data.blocks.forEach((d) => { counts[d.status] += 1; });
+      $('#cmp-summary').textContent = data.blocks.length ? t('cmp_summary', counts) : t('cmp_none');
+      const tbody = $('#cmp-rows');
+      tbody.innerHTML = '';
+      data.blocks.forEach((d) => tbody.append(el('tr', {},
+        el('td', {}, el('span', { class: `tag cmp-${d.status}` }, t('cmp_' + d.status))),
+        el('td', { class: 'loc' }, d.section),
+        el('td', { class: 'old' }, d.old_text),
+        el('td', { class: 'new' }, d.new_text))));
+      $('#cmp-table').hidden = !data.blocks.length;
+      const redline = $('#cmp-redline');
+      redline.hidden = !(isDocx(versionById(a)) && isDocx(versionById(b)));
+      redline.href = `/api/docs/versions/${a}/compare/${b}/redline`;
+    } catch (err) { showError(err.message); }
   }
 
   // ------------------------------------------------------------- search
@@ -379,6 +650,12 @@
   $('#findings-status').addEventListener('change', () => loadFindings().catch((err) => showError(err.message)));
   $('#findings-cat').addEventListener('change', () => loadFindings().catch((err) => showError(err.message)));
   $('#doc-search').addEventListener('submit', searchDoc);
+  $('#doc-revise').addEventListener('click', startRevision);
+  $('#materials-form').addEventListener('submit', startInstructed);
+  $('#rev-files').addEventListener('change', (e) => { const n = e.target.files.length; $('#rev-files-names').textContent = n ? t('files_n', { n }) : ''; });
+  $('#rev-cancel').addEventListener('click', cancelRevision);
+  $('#rev-office').addEventListener('click', openRevisionOffice);
+  $('#compare-form').addEventListener('submit', compareVersions);
   $('#lang-select').addEventListener('change', () => {
     applyStaticText();
     if (!$('#docs-view').hidden) { if (state.doc) openDoc(state.doc.id); else loadList(); }
