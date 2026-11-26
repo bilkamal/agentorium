@@ -1,6 +1,7 @@
 """Shared worker → validator → supervisor loop that produces approved block edits."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from ..config import settings
@@ -17,6 +18,15 @@ class EditOutcome:
     extra: dict = field(default_factory=dict)               # other keys of the last worker reply
 
 
+_LOCATION_LABEL = re.compile(r"^\(tabel \d+, baris \d+, kolom \d+\)\s*")
+
+
+def _duplicates_neighbour(block, blocks_by_id: dict) -> bool:
+    order = sorted(blocks_by_id.values(), key=lambda b: b.ordinal)
+    i = next(n for n, b in enumerate(order) if b.id == block.id)
+    return any(0 <= j < len(order) and order[j].text == block.text for j in (i - 1, i + 1))
+
+
 def _clean(raw, blocks_by_id, basis: dict[str, str], doc_texts: list[str], rejected: list, check=None,
            default_source: str | None = None) -> list[dict]:
     out: dict[str, dict] = {}
@@ -27,7 +37,7 @@ def _clean(raw, blocks_by_id, basis: dict[str, str], doc_texts: list[str], rejec
         block = blocks_by_id.get(bid)
         if block is None:
             continue
-        new = str(r.get("new_text") or "").strip()
+        new = _LOCATION_LABEL.sub("", str(r.get("new_text") or "").strip(), count=1)  # echoed from the prompt
         sids = [str(s) for s in (r.get("source_ids") or r.get("finding_ids") or r.get("instruction_ids") or [])
                 if str(s) in basis]
         if not sids and default_source:
@@ -37,6 +47,9 @@ def _clean(raw, blocks_by_id, basis: dict[str, str], doc_texts: list[str], rejec
             continue
         if not sids:
             rejected.append({**e, "note": "validator: edit tanpa dasar yang dikenal"})
+            continue
+        if not new and _duplicates_neighbour(block, blocks_by_id):  # deleting an exact repeat of the line beside it
+            out[bid] = e
             continue
         why = (check(block, e) if check else validate_edit(block.text, new, [basis[s] for s in sids], doc_texts))
         if not why and e["new_text"] == block.text:

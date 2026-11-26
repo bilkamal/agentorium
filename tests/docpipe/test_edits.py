@@ -158,3 +158,134 @@ def test_grounded_credit_not_reused_for_an_unrelated_number():
     why = validate_edit("Peserta 450 orang dalam 12 kelas.", "Peserta 540 orang dalam 13 kelas.",
                         ["Ganti jumlah peserta 450 menjadi 540"], ["Ada 13 ruang."])
     assert why and "12" in why
+
+
+def _three(tmp_path, texts, name="t.docx"):
+    d = docx.Document()
+    for t in texts:
+        d.add_paragraph(t)
+    p = tmp_path / name
+    d.save(p)
+    return p.read_bytes()
+
+
+def test_repeated_text_is_edited_at_its_own_occurrence(tmp_path):
+    # a heading that also appears in the table of contents; the edit targets the second occurrence only
+    src = _three(tmp_path, ["2.2.2 Interpretasi Periode", "Isi pertama.", "2.2.2 Interpretasi Periode", "Isi kedua."])
+    e = BlockEdit("b3", "2.2.2 Interpretasi Periode", "2.2.2 Hasil Kepatuhan", "r", [], occurrence=1, total=2)
+    _, clean, results = apply_block_edits(src, [e])
+    assert [r.status for r in results] == ["applied"], results
+    assert [b.text for b in blocks_of(clean, tmp_path)] == [
+        "2.2.2 Interpretasi Periode", "Isi pertama.", "2.2.2 Hasil Kepatuhan", "Isi kedua."]
+
+
+def test_repeated_text_first_occurrence_and_short_cell_text(tmp_path):
+    src = _three(tmp_path, ["Status", "Status", "Status", "Lain."])
+    e = BlockEdit("b1", "Status", "Status/Jenis", "r", [], occurrence=0, total=3)
+    _, clean, results = apply_block_edits(src, [e])
+    assert [r.status for r in results] == ["applied"]
+    assert [b.text for b in blocks_of(clean, tmp_path)] == ["Status/Jenis", "Status", "Status", "Lain."]
+
+
+def test_occurrence_count_mismatch_stays_needs_human(tmp_path):
+    src = _three(tmp_path, ["Sama.", "Sama.", "Lain."])
+    e = BlockEdit("b1", "Sama.", "Beda.", "r", [], occurrence=0, total=3)  # caller's view disagrees with the file
+    tracked, _, results = apply_block_edits(src, [e])
+    assert results[0].status == "needs_human" and tracked is None
+
+
+def test_multi_paragraph_block_edited_per_paragraph(tmp_path):
+    d = docx.Document()
+    t = d.add_table(rows=1, cols=1)
+    cell = t.cell(0, 0)
+    cell.paragraphs[0].text = "COLLECTOR HEALTH"
+    cell.add_paragraph("2 Normal")
+    cell.add_paragraph("Snapshot terakhir 12:12.")
+    d.add_paragraph("Ringkasan: 2 Normal")
+    p = tmp_path / "cell.docx"
+    d.save(p)
+    old = "COLLECTOR HEALTH\n2 Normal\nSnapshot terakhir 12:12."
+    new = "COLLECTOR HEALTH\n2 terdaftar, Health tidak terbaca\nSnapshot terakhir 12:12."
+    _, clean, results = apply_block_edits(p.read_bytes(), [BlockEdit("b0", old, new, "r", [], occurrence=0, total=1)])
+    assert [r.status for r in results] == ["applied"], results
+    out = docx.Document(io.BytesIO(clean))
+    assert [q.text for q in out.tables[0].cell(0, 0).paragraphs] == [
+        "COLLECTOR HEALTH", "2 terdaftar, Health tidak terbaca", "Snapshot terakhir 12:12."]
+    assert out.paragraphs[-1].text == "Ringkasan: 2 Normal"
+
+
+def test_duplicate_neighbour_line_may_be_deleted(tmp_path):
+    from agentorium.docpipe.editloop import _clean
+    from agentorium.docpipe.models import Block
+
+    def blk(i, text):
+        return Block(id=f"b{i}", uid=f"u{i}", ordinal=i, section_id="s", type="paragraph", text=text)
+
+    bs = {b.id: b for b in [blk(1, "x AS period_end,"), blk(2, "x AS period_end,"), blk(3, "FROM t")]}
+    rej = []
+    out = _clean([{"block_id": "b2", "new_text": "", "finding_ids": ["f"]}], bs, {"f": "duplikat"}, [], rej)
+    assert [e["block_id"] for e in out] == ["b2"] and not rej
+    out = _clean([{"block_id": "b3", "new_text": "", "finding_ids": ["f"]}], bs, {"f": "hapus"}, [], rej)
+    assert out == [] and "kosong" in rej[-1]["note"]
+
+
+def test_repeat_counted_as_whole_paragraphs_not_substrings(tmp_path):
+    # "Status" as a cell of its own three times, and inside other sentences many times
+    src = _three(tmp_path, ["Status perangkat aktif.", "Status", "Status", "Status", "Status kolektor."])
+    e = BlockEdit("b2", "Status", "Status/Jenis", "r", [], occurrence=1, total=3)
+    _, clean, results = apply_block_edits(src, [e])
+    assert [r.status for r in results] == ["applied"], results
+    assert [b.text for b in blocks_of(clean, tmp_path)] == [
+        "Status perangkat aktif.", "Status", "Status/Jenis", "Status", "Status kolektor."]
+
+
+def test_location_label_from_prompt_is_not_written_into_the_document():
+    from agentorium.docpipe.editloop import _clean
+    from agentorium.docpipe.models import Block
+
+    b = Block(id="b1", uid="u", ordinal=1, section_id="s", type="table_cell", text="2 Normal", table_index=4, row=3,
+              col=1)
+    out = _clean([{"block_id": "b1", "new_text": "(tabel 5, baris 4, kolom 2) 2 terdaftar", "finding_ids": ["f"]}],
+                 {"b1": b}, {"f": "x"}, [], [])
+    assert out[0]["new_text"] == "2 terdaftar"
+
+
+def _deleted_inserted(tracked: bytes) -> tuple[str, str]:
+    from lxml import etree
+
+    w = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    x = etree.fromstring(_document_xml(tracked))
+    dels = "".join(t.text or "" for t in x.iter(w + "delText"))
+    ins = "".join(t.text or "" for i in x.iter(w + "ins") for t in i.iter(w + "t"))
+    return dels, ins
+
+
+def test_located_edit_marks_only_the_changed_words(tmp_path):
+    src = _three(tmp_path, ["2.2.2 Interpretasi Periode Pelaporan", "Isi.", "2.2.2 Interpretasi Periode Pelaporan"])
+    e = BlockEdit("b3", "2.2.2 Interpretasi Periode Pelaporan", "2.2.2 Hasil Periode Pelaporan", "r", [], 1, 2)
+    tracked, clean, results = apply_block_edits(src, [e])
+    assert [r.status for r in results] == ["applied"]
+    dels, ins = _deleted_inserted(tracked)
+    assert dels.strip() == "Interpretasi" and ins.strip() == "Hasil", (dels, ins)
+    assert [b.text for b in blocks_of(clean, tmp_path)][2] == "2.2.2 Hasil Periode Pelaporan"
+
+
+def test_located_insertion_marks_only_the_inserted_words(tmp_path):
+    src = _three(tmp_path, ["Status", "Status"])
+    tracked, clean, results = apply_block_edits(src, [BlockEdit("b2", "Status", "Status/Jenis", "r", [], 1, 2)])
+    assert [r.status for r in results] == ["applied"]
+    dels, ins = _deleted_inserted(tracked)
+    assert len(dels) + len(ins) < len("Status") + len("Status/Jenis")
+    assert [b.text for b in blocks_of(clean, tmp_path)] == ["Status", "Status/Jenis"]
+
+
+def test_paragraph_is_not_split_by_an_edit(tmp_path):
+    old = "Kalimat pertama di sini. Kalimat kedua yang panjang tentang data penjualan bulan ini."
+    src = _three(tmp_path, [old, "Lain."])
+    new = "Kalimat pertama di sini.\n\nKalimat kedua yang panjang tentang data penjualan bulan ini."
+    tracked, clean, results = apply_block_edits(src, [BlockEdit("b1", old, new.replace("panjang", "lebih panjang"),
+                                                                "r", [], 0, 1)])
+    assert [r.status for r in results] == ["applied"]
+    assert [b.text for b in blocks_of(clean, tmp_path)][0] == old.replace("panjang", "lebih panjang")
+    dels, ins = _deleted_inserted(tracked)
+    assert "Kalimat pertama" not in dels and len(ins) < 20, (dels, ins)
