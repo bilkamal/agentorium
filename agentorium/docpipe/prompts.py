@@ -125,3 +125,72 @@ def supervisor_user(section_path: str, blocks_by_id: dict, findings: list[dict])
                   f"    teks blok: {b.text}", f"    kutipan: {f['quote']}",
                   f"    masalah: {f['description']}", f"    saran: {f['suggestion']}"]
     return "\n".join(parts)
+
+
+# --------------------------------------------------------------------- editing (phase 3)
+EDIT_ITEM = {
+    "type": "object",
+    "properties": {"block_id": {"type": "string"}, "new_text": {"type": "string"},
+                   "source_ids": {"type": "array", "items": {"type": "string"}}, "reason": {"type": "string"}},
+    "required": ["block_id", "new_text", "source_ids", "reason"],
+}
+
+EDIT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "edits": {"type": "array", "items": EDIT_ITEM},
+        "skipped": {"type": "array", "items": {"type": "object", "properties": {
+            "source_id": {"type": "string"}, "reason": {"type": "string"}}, "required": ["source_id", "reason"]}},
+    },
+    "required": ["edits", "skipped"],
+}
+
+EDIT_RULES = """Aturan menyunting:
+- Satu edit = satu blok. new_text adalah teks LENGKAP blok itu setelah diperbaiki (bukan potongan, tanpa [bXXXXX]).
+- Ubah seminimal mungkin; pertahankan gaya, istilah, dan susunan kalimat yang tidak bermasalah.
+- Jangan mengubah, menambah, atau menghapus angka, tanggal, nama, atau satuan kecuali dasar perubahannya memintanya
+  secara tegas dan nilai yang benar jelas.
+- Jangan pakai tanda markdown (*, **, _, #). Tulis teks biasa.
+- source_ids berisi id dasar perubahan (temuan/instruksi) yang ditangani edit itu.
+- Bila sebuah dasar tidak bisa/tidak perlu dikerjakan (nilai yang benar tidak jelas, butuh data dari luar, sudah benar),
+  masukkan ke skipped dengan alasannya. Jangan memaksakan edit."""
+
+
+def revision_worker_system(name: str) -> str:
+    return f"""Anda {name}, penyunting dokumen. Anda menerima satu bagian dokumen dan daftar temuan review yang sudah
+disetujui. Tugas Anda menulis perbaikan untuk blok-blok yang disebut temuan.
+
+{EDIT_RULES}
+- Untuk temuan konsistensi, ubah hanya bila nilai yang benar dapat dipastikan dari dokumen; jika tidak, skipped."""
+
+
+def revision_worker_user(section_path: str, blocks, findings: list[dict],
+                         feedback: list[tuple[dict, str]] | None = None) -> str:
+    parts = [f"BAGIAN: {section_path}", "", "BLOK:", *(_block_line(b) for b in blocks), "", "TEMUAN:"]
+    for f in findings:
+        parts.append(f"- id={f['id']} [{f['block_id']}] {f['category']}: {f['description']}"
+                     f" | kutipan: \"{f['quote']}\"" + (f" | saran: {f['suggestion']}" if f.get("suggestion") else ""))
+    if feedback:
+        parts += ["", "REVISI DIMINTA SUPERVISOR. Perbaiki edit berikut sesuai feedback dan kirim ulang:"]
+        for e, fb in feedback:
+            parts.append(f"- edit [{e['block_id']}]: {e['new_text']}\n  feedback: {fb}")
+    return "\n".join(parts)
+
+
+EDIT_SUPERVISOR_SYSTEM = """Anda supervisor penyuntingan dokumen. Nilai setiap usulan edit:
+- approve: edit benar-benar menyelesaikan dasarnya, tidak mengubah makna, tidak mengubah fakta yang tidak diminta.
+- reject: edit salah, mengubah makna, atau tidak perlu.
+- revise: arahnya benar tetapi teksnya perlu diperbaiki — tulis di feedback apa yang harus diubah.
+Bersikap tegas: dokumen akan berubah sesuai edit yang Anda setujui."""
+
+
+def edit_supervisor_user(section_path: str, blocks_by_id: dict, edits: list[dict], basis: dict[str, str]) -> str:
+    parts = [f"BAGIAN: {section_path}", "", "USULAN EDIT:"]
+    for i, e in enumerate(edits):
+        parts += [f"[{i}] blok {e['block_id']}",
+                  f"    lama: {blocks_by_id[e['block_id']].text}", f"    baru: {e['new_text']}",
+                  f"    alasan: {e['reason']}"]
+        for sid in e["source_ids"]:
+            if sid in basis:
+                parts.append(f"    dasar {sid}: {basis[sid]}")
+    return "\n".join(parts)

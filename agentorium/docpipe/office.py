@@ -42,7 +42,8 @@ class OfficeBridge:
                 return s
             doc = store.get_document(job.document_id)
             version = store.get_version(job.version_id)
-            title = f"Review: {doc.title if doc else '?'} v{version.version_no if version else '?'}"
+            kind = {"review": "Review", "revision": "Revisi", "instructed_revision": "Revisi dari bahan"}.get(job.type, job.type)
+            title = f"{kind}: {doc.title if doc else '?'} v{version.version_no if version else '?'}"
             s = self.orch.create_session(kind="external", title=title)
             fresh = store.get_job(job.id) or job
             store.update_job(job.id, params={**fresh.params, "session_id": s.id})
@@ -58,7 +59,7 @@ class OfficeBridge:
                 w = workers[t.ordinal % len(workers)]
                 steps.append({"id": t.ordinal + 1, "title": sec.heading if sec else t.section_id,
                               "assignee": w.id if w else "", "instructions": sec.path if sec else "",
-                              "deliverable": "temuan review"})
+                              "deliverable": "temuan review" if job.type == "review" else "usulan edit"})
             self.orch.push_external(s, {"type": "plan", "status": "agreed",
                                         "plan": {"objective": title, "steps": steps}})
             self.orch.push_external(s, {"type": "stage", "stage": "executing"})
@@ -101,7 +102,7 @@ class OfficeBridge:
     # ---------------------------------------------------------- job events
     @_safe
     def on_job_event(self, job: Job, event: str, payload: dict) -> None:
-        if job is None or job.type != "review":
+        if job is None or job.type not in ("review", "revision", "instructed_revision"):
             return
         sup = (registry.by_role("supervisor")[:1] or [None])[0]
         agent = sup.id if sup else ""
@@ -116,13 +117,22 @@ class OfficeBridge:
             self._push(job, {"type": "error", "message": f"bagian gagal: {payload.get('error', '')}"})
         elif event == "finalizing":
             self._push(job, {"type": "agent_status", "agent": agent, "status": "reviewing"})
-            self._push(job, {"type": "note", "agent": agent, "message": "cek konsistensi antarbab"})
+            self._push(job, {"type": "note", "agent": agent, "message": "cek konsistensi antarbab" if job.type == "review"
+                             else "menerapkan perubahan ke DOCX"})
         elif event in ("finished", "cancelled"):
-            counts = get_store().count_findings(job.id)
             self._push(job, {"type": "agent_status", "agent": agent, "status": "idle"})
-            self._push(job, {"type": "note", "agent": agent,
-                             "message": f"review {payload.get('status', event)}: {counts.get('valid', 0)} temuan valid, "
-                                        f"{counts.get('needs_human', 0)} perlu dicek, {counts.get('rejected', 0)} ditolak"})
+            if job.type == "review":
+                counts = get_store().count_findings(job.id)
+                msg = (f"review {payload.get('status', event)}: {counts.get('valid', 0)} temuan valid, "
+                       f"{counts.get('needs_human', 0)} perlu dicek, {counts.get('rejected', 0)} ditolak")
+            else:
+                ch = get_store().get_changes(job_id=job.id)
+                n = {k: sum(c.status == k for c in ch) for k in ("applied", "needs_human", "rejected", "suggestion")}
+                fresh = get_store().get_job(job.id) or job
+                where = "versi baru dibuat" if fresh.params.get("result_version_id") else "tidak ada versi baru"
+                msg = (f"revisi {payload.get('status', event)}: {n['applied']} perubahan diterapkan, "
+                       f"{n['needs_human']} perlu dicek, {n['rejected']} ditolak, {n['suggestion']} saran — {where}")
+            self._push(job, {"type": "note", "agent": agent, "message": msg})
             self._push(job, {"type": "stage", "stage": "done"})
 
 
