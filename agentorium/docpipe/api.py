@@ -278,6 +278,20 @@ async def create_instructed_revision(version_id: str, notes: str = Form(""), use
     return {"job": _job_json(job)}
 
 
+@router.post("/versions/{version_id}/updates", status_code=202)
+async def create_update(version_id: str, period_label: str = Form(""), notes: str = Form(""),
+                        files: list[UploadFile] = File(default=[])):
+    from .update import start_update
+
+    _version_or_404(version_id)
+    loaded = [((f.filename or "data"), await _read_upload(f)) for f in files or []]
+    try:
+        job = await start_update(version_id, period_label=period_label, files=loaded, notes=notes)
+    except (ValueError, RuntimeError) as exc:
+        raise _start_error(exc) from exc
+    return {"job": _job_json(job)}
+
+
 def _with_location(store, version_id: str, rows: list[dict], block_key: str) -> list[dict]:
     blocks = {b.id: b for b in store.get_blocks(version_id)}
     paths = {s.id: s.path for s in store.get_sections(version_id)}

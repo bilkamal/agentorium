@@ -234,3 +234,45 @@ def instructed_worker_user(section_path: str, blocks, instructions: list[dict],
         for e, fb in feedback:
             parts.append(f"- edit [{e['block_id']}]: {e['new_text']}\n  feedback: {fb}")
     return "\n".join(parts)
+
+
+UPDATE_SCHEMA = EDIT_SCHEMA
+
+
+def update_worker_system(name: str) -> str:
+    return f"""Anda {name}, penyusun laporan berkala. Anda menerima satu bagian laporan periode lalu dan DATA periode baru.
+Perbarui blok yang bergantung periode (tanggal, bulan, angka, sel tabel, kalimat analisis/kesimpulan yang menyebut
+angka atau tren) supaya sesuai data baru. Blok yang tidak bergantung periode (metodologi, profil, definisi) jangan diubah.
+
+Aturan:
+- Satu edit = satu blok; new_text = teks LENGKAP blok setelah diperbarui (tanpa [bXXXXX], tanpa markdown).
+- Setiap angka di new_text harus diambil persis dari DATA, atau sudah ada di blok itu dan memang tidak berubah.
+- Angka TURUNAN (persen kenaikan, selisih, total, porsi, rata-rata, konversi satuan seperti rupiah → juta) JANGAN
+  dihitung sendiri. Tulis rumus: {{{{calc: (286000000 - 260000000) / 260000000 * 100 | pct:1}}}}. Di dalam rumus hanya
+  angka dari DATA atau dari laporan lama, ditulis tanpa pemisah ribuan dengan titik sebagai desimal; operator + - * / ( ).
+  Format: pct:1 (persen 1 desimal, tulis kata "persen"/"%" di luar rumus), num:0 (bilangan bulat), num:2, dst.
+  Contoh konversi: "Rp {{{{calc: 286000000 / 1000000 | num:0}}}} juta".
+- Sesuaikan kata arah (naik/turun, meningkat/menurun) dengan data.
+- Bila data untuk sebuah angka TIDAK ADA, jangan menebak: masukkan blok itu ke skipped (source_id = id blok,
+  reason = data apa yang kurang). Blok itu akan ditahan untuk diperiksa manusia.
+- source_ids boleh ["data"]."""
+
+
+def update_worker_user(section_path: str, period: str, blocks, data_text: str, notes: str,
+                       feedback: list[tuple[dict, str]] | None = None) -> str:
+    parts = [f"PERIODE BARU: {period}"]
+    if notes.strip():
+        parts += ["", f"CATATAN DARI PENGGUNA: {notes.strip()}"]
+    parts += ["", "DATA PERIODE BARU:", data_text, "", f"BAGIAN: {section_path}", "",
+              "BLOK (laporan periode lalu):", *(_block_line(b) for b in blocks)]
+    if feedback:
+        parts += ["", "REVISI DIMINTA SUPERVISOR. Perbaiki edit berikut sesuai feedback dan kirim ulang:"]
+        for e, fb in feedback:
+            parts.append(f"- edit [{e['block_id']}]: {e['new_text']}\n  feedback: {fb}")
+    return "\n".join(parts)
+
+
+def update_supervisor_context(period: str, data_text: str) -> str:
+    return (f"Ini UPDATE LAPORAN BERKALA ke periode {period}. Setujui edit hanya bila angka/tanggal/arah tren sesuai DATA "
+            f"berikut (angka hasil rumus sudah dihitung mesin dan benar secara aritmetika; nilai apakah rumusnya tepat).\n"
+            f"DATA PERIODE BARU:\n{data_text}\n\n")

@@ -16,7 +16,7 @@ from .store import get_store
 
 log = logging.getLogger(__name__)
 EDITABLE = ("language", "consistency", "structure")
-MUTATING_JOBS = ("revision", "instructed_revision")
+MUTATING_JOBS = ("revision", "instructed_revision", "update")
 
 
 class Conflict(ValueError):
