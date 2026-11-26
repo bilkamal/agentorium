@@ -88,13 +88,27 @@ def read_comments(docx: bytes, blocks: list[Block]) -> list[dict]:
     out = []
     for cid, c in comments.items():
         ptext = normalize_ws(para_of.get(cid, ""))
-        block = next((b for b in blocks if ptext and ptext in normalize_ws(b.text)), None)
-        out.append({**c, "block_id": block.id if block else None, "anchor": "".join(anchors.get(cid, [])).strip()})
+        exact = [b.id for b in blocks if ptext and normalize_ws(b.text) == ptext]
+        matches = exact or [b.id for b in blocks if ptext and ptext in normalize_ws(b.text)]
+        one = matches[0] if len(matches) == 1 else None
+        out.append({**c, "block_id": one, "candidate_block_ids": [] if one else matches[:CANDIDATE_LIMIT],
+                    "anchor": "".join(anchors.get(cid, [])).strip()})
     return [c for c in out if c["text"]]
 
 
 def material_text(filename: str, data: bytes) -> str:
     ext = Path(filename).suffix.lower()
+    if ext not in MATERIAL_EXTENSIONS:
+        raise ValueError(f"Format bahan tidak didukung ({ext or 'tanpa ekstensi'}). Gunakan: {', '.join(MATERIAL_EXTENSIONS)}")
+    try:
+        return _material_text(ext, data)
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError(f"Berkas bahan {filename} rusak atau tidak bisa dibaca: {exc}") from exc
+
+
+def _material_text(ext: str, data: bytes) -> str:
     if ext in (".txt", ".md"):
         return data.decode("utf-8", errors="replace").strip()
     if ext == ".docx":

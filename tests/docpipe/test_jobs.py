@@ -337,3 +337,10 @@ def test_rate_limited_preparer_pauses_then_retries(store):
 
     run(go())
     assert len(calls) == 2 and "paused" in events and store.get_job(job.id).status == "done"
+
+
+def test_cancel_refused_while_finalizing(store):
+    job = new_job(store, 1)
+    store.update_job(job.id, status="finalizing")
+    assert run(JobRunner().cancel(job.id)) is False
+    assert store.get_job(job.id).status == "finalizing"

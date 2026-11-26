@@ -100,13 +100,13 @@ def restore(store: Store, version_id: str) -> Version:
 
 
 def create_revised_version(store: Store, base_version_id: str, tracked: bytes, clean: bytes, *, source: str,
-                           note: str) -> Version:
+                           note: str, job_id: str | None = None) -> Version:
     """New version from an edited copy of `base`: clean file (changes accepted) + tracked copy for Word."""
     base = store.get_version(base_version_id)
     if base is None or base.status != "ready":
         raise IngestError("Versi dasar tidak ditemukan atau belum siap")
     new = store.add_version(base.document_id, source=source, filename=base.filename, parent_version_id=base.id,
-                            note=note)
+                            note=note, created_by_job=job_id)
     path = _abs(new.file_path)
     tracked_rel = new.file_path[: -len(path.suffix)] + ".tracked.docx"
     written: list[Path] = []

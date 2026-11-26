@@ -80,9 +80,11 @@ async def get_document(doc_id: str):
 @router.delete("/{doc_id}")
 async def delete_document(doc_id: str):
     store = get_store()
-    for job in store.list_jobs(statuses=ACTIVE):
-        if job.document_id == doc_id:
-            await runner.cancel(job.id)
+    mine = [j for j in store.list_jobs(statuses=ACTIVE) if j.document_id == doc_id]
+    if any(j.status == "finalizing" for j in mine):
+        raise HTTPException(409, "perubahan sedang diterapkan ke dokumen — coba lagi sebentar")
+    for job in mine:
+        await runner.cancel(job.id)
     if not store.delete_document(doc_id):
         raise HTTPException(404, "dokumen tidak ditemukan")
     shutil.rmtree(settings.data_dir / "docs" / doc_id, ignore_errors=True)
@@ -351,5 +353,5 @@ async def job_findings(job_id: str, status: str | None = None, category: str | N
 async def cancel_job(job_id: str):
     _job_or_404(job_id)
     if not await runner.cancel(job_id):
-        raise HTTPException(409, "job sudah selesai")
+        raise HTTPException(409, "job sudah selesai atau sedang menerapkan perubahan")
     return {"ok": True}

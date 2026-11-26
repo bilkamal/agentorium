@@ -59,7 +59,8 @@ async def _prepare(job: Job) -> None:
     except Exception:  # retrieval is optional; exact quotes still locate
         pass
     rows = [dict(job_id=job.id, source="comment", author=c["author"], text=c["text"], quote=c.get("anchor") or "",
-                 block_ids=[c["block_id"]] if c.get("block_id") else [], candidate_block_ids=[], status="pending")
+                 block_ids=[c["block_id"]] if c.get("block_id") else [],
+                 candidate_block_ids=c.get("candidate_block_ids") or [], status="pending")
             for c in job.params.get("comments") or []]
     supervisor, _ = pick_agents()
     llm = review.make_llm(supervisor)

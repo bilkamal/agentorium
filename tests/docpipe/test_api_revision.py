@@ -128,3 +128,11 @@ def test_followup_only_for_instructed_jobs(env):
     c, store, v, _, _ = env
     job = store.create_job(v.document_id, v.id, "review", {})
     assert c.get(f"/api/docs/jobs/{job.id}/followup.docx").status_code == 404
+
+
+def test_delete_document_refused_while_changes_are_applied(env):
+    c, store, v, _, _ = env
+    job = store.create_job(v.document_id, v.id, "revision", {})
+    store.update_job(job.id, status="finalizing")
+    r = c.delete(f"/api/docs/{v.document_id}")
+    assert r.status_code == 409 and store.get_document(v.document_id) is not None

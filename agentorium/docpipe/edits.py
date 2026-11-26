@@ -53,8 +53,10 @@ def validate_edit(old: str, new: str, basis_texts: list[str], doc_texts: list[st
     basis = set().union(*(_tokens(t) for t in basis_texts)) if basis_texts else set()
     old_t, new_t = _tokens(old), _tokens(new)
     dropped = sorted(old_t - new_t - basis)
-    grounded = (new_t - old_t) & basis  # "the right value is 540" replaces 450 without naming it
-    if len(dropped) > len(grounded):
+    # "the right value is 540" replaces 450 without naming it; a replacement whose old value the basis names
+    # already explains itself, so its credit is not available for another, unrequested change
+    grounded = len((new_t - old_t) & basis) - len((old_t - new_t) & basis)
+    if len(dropped) > max(0, grounded):
         return f"angka/tanggal berubah tanpa dasar: {', '.join(dropped)}"
     known = basis | (set().union(*(_tokens(t) for t in doc_texts)) if doc_texts else set())
     added = sorted(new_t - old_t - known)

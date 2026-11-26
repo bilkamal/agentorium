@@ -117,6 +117,21 @@ async def apply_job_edits(job: Job, *, source: str, kind: str, extra_changes: li
 
     store = get_store()
     base = store.get_version(job.version_id)
+
+    def remember(vid):
+        fresh = store.get_job(job.id)
+        if vid and fresh.params.get("result_version_id") != vid:
+            store.update_job(job.id, params={**fresh.params, "result_version_id": vid})
+        return vid
+
+    # The finalizer may run again (restart during "finalizing", or a crash part-way): never make a second version
+    # or a second change log. A version is created first, then the change log, then result_version_id.
+    existing = store.version_by_job(job.id)
+    if existing is not None and existing.status != "ready":  # crashed while writing it
+        store.delete_version(existing.id)
+        existing = None
+    if store.get_changes(job_id=job.id):
+        return remember(existing.id if existing else None)
     blocks = {b.id: b for b in store.get_blocks(base.id)}
     approved, rows = [], []
     for t in store.get_tasks(job.id):
@@ -133,10 +148,10 @@ async def apply_job_edits(job: Job, *, source: str, kind: str, extra_changes: li
     edits = [BlockEdit(e["block_id"], blocks[e["block_id"]].text, e["new_text"], e["reason"], e["source_ids"])
              for e in approved]
     tracked, clean, results = await asyncio.to_thread(apply_block_edits, version_file(store, base).read_bytes(), edits)
-    new_id = None
-    if clean is not None:
+    new_id = existing.id if existing else None
+    if clean is not None and existing is None:
         nv = await asyncio.to_thread(create_revised_version, store, base.id, tracked, clean, source=source,
-                                     note=note or f"Revisi dari v{base.version_no}")
+                                     note=note or f"Revisi dari v{base.version_no}", job_id=job.id)
         new_id = nv.id
         schedule_index(nv.id)
     for e, r in zip(approved, results):
@@ -148,10 +163,7 @@ async def apply_job_edits(job: Job, *, source: str, kind: str, extra_changes: li
     rows += extra_changes or []
     if rows:
         store.add_changes(rows)
-    if new_id:
-        fresh = store.get_job(job.id)
-        store.update_job(job.id, params={**fresh.params, "result_version_id": new_id})
-    return new_id
+    return remember(new_id)
 
 
 async def _finalize_revision(job: Job) -> None:

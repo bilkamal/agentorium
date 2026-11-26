@@ -163,3 +163,41 @@ def test_server_registers_revision_handler(tmp_settings):
         runner._handlers.pop(k, None)
     with TestClient(server.app):
         assert "revision_section" in runner._handlers and "instructed_section" in runner._handlers
+
+
+def _approve_one(replies, blocks, f1):
+    replies["worker"].append({"edits": [{"block_id": blocks[OLD].id, "new_text": NEW, "source_ids": [f1.id],
+                                         "reason": "x"}], "skipped": []})
+    replies["supervisor"].append({"verdicts": [{"index": 0, "verdict": "approve", "feedback": ""}]})
+
+
+def test_finalizer_rerun_creates_no_second_version(reviewed, team, llm):  # noqa: F811
+    import agentorium.docpipe.revise as rv
+
+    store, v, rjob, blocks, f1, _ = reviewed
+    replies, _ = llm
+    _approve_one(replies, blocks, f1)
+    job = store.get_job(run_revision(rjob.id).id)
+    n_changes = len(store.get_changes(job_id=job.id))
+    asyncio.run(rv._finalize_revision(store.get_job(job.id)))  # e.g. server restarted during finalizing
+    assert len(store.list_versions(v.document_id)) == 2
+    assert len(store.get_changes(job_id=job.id)) == n_changes
+
+
+def test_finalizer_crash_after_version_created_recovers(reviewed, team, llm, monkeypatch):  # noqa: F811
+    import agentorium.docpipe.revise as rv
+
+    store, v, rjob, blocks, f1, _ = reviewed
+    replies, _ = llm
+    _approve_one(replies, blocks, f1)
+    real = type(store).add_changes
+    monkeypatch.setattr(type(store), "add_changes", lambda self, rows: (_ for _ in ()).throw(RuntimeError("crash")))
+    job = store.get_job(run_revision(rjob.id).id)
+    assert job.status == "partial"
+    monkeypatch.setattr(type(store), "add_changes", real)
+    asyncio.run(rv._finalize_revision(store.get_job(job.id)))
+    versions = store.list_versions(v.document_id)
+    assert len(versions) == 2
+    job = store.get_job(job.id)
+    assert job.params["result_version_id"] == versions[-1].id
+    assert [c.status for c in store.get_changes(job_id=job.id) if c.status == "applied"] == ["applied"]

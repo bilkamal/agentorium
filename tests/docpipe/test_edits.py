@@ -150,3 +150,11 @@ def test_edit_paragraph_with_word_comment(tmp_path):
 
     import docx
     assert new in [p.text for p in docx.Document(io.BytesIO(clean)).paragraphs]
+
+
+def test_grounded_credit_not_reused_for_an_unrelated_number():
+    from agentorium.docpipe.edits import validate_edit
+
+    why = validate_edit("Peserta 450 orang dalam 12 kelas.", "Peserta 540 orang dalam 13 kelas.",
+                        ["Ganti jumlah peserta 450 menjadi 540"], ["Ada 13 ruang."])
+    assert why and "12" in why

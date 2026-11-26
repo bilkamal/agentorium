@@ -61,6 +61,7 @@ class Version:
     index_status: str = "none"  # none | indexing | ready | fts_only | failed
     index_error: str | None = None
     tracked_path: str | None = None  # revisions: the same version as tracked changes against its parent
+    created_by_job: str | None = None  # revisions: the job that produced it (makes the finalizer idempotent)
 
 
 @dataclass

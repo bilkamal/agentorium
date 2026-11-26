@@ -1,5 +1,6 @@
 import asyncio
 import io
+import zipfile
 
 import docx
 import pytest
@@ -99,3 +100,42 @@ def test_instructions_store_roundtrip(tmp_settings):
     assert i.block_ids == ["b1"] and i.ordinal == 0
     store.update_instruction(i.id, status="done", response="sudah")
     assert store.get_instructions(job.id)[0].status == "done"
+
+
+def test_comment_on_heading_not_attached_to_earlier_paragraph_containing_it(tmp_path):
+    from adeu import ModifyText, RedlineEngine
+    from lxml import etree
+
+    d = docx.Document()
+    d.add_paragraph("Lihat Metode untuk rinciannya.")
+    d.add_heading("Metode", 1)
+    d.add_paragraph("Komentar ditaruh di sini.")
+    b = io.BytesIO()
+    d.save(b)
+    e = RedlineEngine(io.BytesIO(b.getvalue()), author="A")
+    e.process_batch([ModifyText(target_text="sini", new_text="sini", comment="ganti judul")], partial=True)
+    data = e.save_to_stream().getvalue()
+    # move the comment markers from the third paragraph to the heading
+    zin = zipfile.ZipFile(io.BytesIO(data))
+    W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    root = etree.fromstring(zin.read("word/document.xml"))
+    paras = list(root.iter(W + "p"))
+    heading, third = paras[1], paras[2]
+    for tag in ("commentRangeStart", "commentRangeEnd"):
+        heading.append(next(third.iter(W + tag)))
+    heading.append(next(third.iter(W + "commentReference")).getparent())
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as zout:
+        for item in zin.infolist():
+            zout.writestr(item, etree.tostring(root) if item.filename == "word/document.xml" else zin.read(item))
+    p = tmp_path / "h.docx"
+    p.write_bytes(out.getvalue())
+    blocks = parse_docx(p).blocks
+    (c,) = read_comments(out.getvalue(), blocks)
+    assert next(bl for bl in blocks if bl.id == c["block_id"]).text == "Metode"
+
+
+def test_corrupt_material_file_is_a_value_error():
+    for name in ("a.docx", "a.pdf"):
+        with pytest.raises(ValueError, match="a\\."):
+            material_text(name, b"PK\x03\x04 not really a zip")

@@ -69,7 +69,7 @@ CREATE INDEX IF NOT EXISTS instructions_by_job ON instructions(job_id, ordinal);
 """
 
 MIGRATIONS = {"versions": [("index_status", "TEXT NOT NULL DEFAULT 'none'"), ("index_error", "TEXT"),
-                           ("tracked_path", "TEXT")]}
+                           ("tracked_path", "TEXT"), ("created_by_job", "TEXT")]}
 
 JOB_FIELDS = ("status", "params", "total_tasks", "error", "started_at", "finished_at", "resume_at")
 TASK_FIELDS = ("status", "attempts", "error", "output")
@@ -189,7 +189,7 @@ class Store:
         return Version(**data)
 
     def add_version(self, document_id: str, *, source: str, filename: str, parent_version_id: str | None,
-                    note: str = "") -> Version:
+                    note: str = "", created_by_job: str | None = None) -> Version:
         ext = Path(filename).suffix.lower()
         with self._lock, self._db:
             n = self._db.execute("SELECT COALESCE(MAX(version_no),0)+1 FROM versions WHERE document_id=?",
@@ -197,12 +197,17 @@ class Store:
             v = Version(id=_new_id(), document_id=document_id, version_no=n, source=source,
                         parent_version_id=parent_version_id, filename=filename,
                         file_path=f"docs/{document_id}/v{n}{ext}", original_path=None, status="processing",
-                        error=None, warnings=[], note=note, created_at=time.time())
+                        error=None, warnings=[], note=note, created_at=time.time(), created_by_job=created_by_job)
             row = asdict(v)
             row["warnings"] = json.dumps(v.warnings)
             cols = ",".join(row)
             self._db.execute(f"INSERT INTO versions({cols}) VALUES({','.join('?' * len(row))})", tuple(row.values()))
         return v
+
+    def version_by_job(self, job_id: str) -> Version | None:
+        r = self._db.execute("SELECT id FROM versions WHERE created_by_job=? ORDER BY version_no DESC LIMIT 1",
+                             (job_id,)).fetchone()
+        return self.get_version(r[0]) if r else None
 
     def update_version(self, version_id: str, **fields) -> Version:
         unknown = set(fields) - set(VERSION_FIELDS)

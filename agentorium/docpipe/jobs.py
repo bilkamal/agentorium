@@ -71,8 +71,8 @@ class JobRunner:
     async def cancel(self, job_id: str) -> bool:
         store = get_store()
         job = store.get_job(job_id)
-        if job is None or job.status not in ACTIVE:
-            return False
+        if job is None or job.status not in ACTIVE or job.status == "finalizing":
+            return False  # finalizing writes files in a worker thread that cannot be interrupted safely
         store.update_job(job_id, status="cancelled", finished_at=time.time())
         t = self._running.get(job_id)
         if t is not None:
