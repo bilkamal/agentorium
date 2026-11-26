@@ -71,3 +71,66 @@ class Chunk:
     heading_path: str
     content: str
     ordinal: int
+
+
+@dataclass
+class Job:
+    id: str
+    document_id: str
+    version_id: str
+    type: str
+    status: str  # queued | running | paused | finalizing | done | partial | failed | cancelled
+    params: dict
+    total_tasks: int
+    done_tasks: int
+    failed_tasks: int
+    error: str | None
+    created_at: float
+    started_at: float | None
+    finished_at: float | None
+    resume_at: float | None
+
+
+@dataclass
+class Task:
+    id: str
+    job_id: str
+    ordinal: int
+    section_id: str
+    block_ids: list[str]
+    kind: str
+    status: str  # queued | running | done | failed
+    attempts: int
+    error: str | None
+    output: dict
+
+
+@dataclass
+class Finding:
+    id: str
+    job_id: str
+    task_id: str | None
+    version_id: str
+    block_id: str
+    other_block_id: str | None
+    category: str
+    severity: str
+    quote: str
+    description: str
+    suggestion: str
+    confidence: float
+    status: str  # valid | rejected | needs_human
+    validator_note: str | None
+
+
+@dataclass
+class Fact:
+    id: str
+    job_id: str
+    version_id: str
+    block_id: str
+    kind: str
+    key: str
+    value: str
+    unit: str
+    quote: str

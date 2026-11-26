@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import uuid
 from pathlib import Path
@@ -17,7 +18,15 @@ from .documents import ALLOWED_EXTENSIONS, MAX_UPLOAD_BYTES, DocumentError, extr
 from .orchestrator import EXTERNAL_EVENT_TYPES, Orchestrator, Session
 from .registry import COLORS, HAIR, ROLES, RegistryError, registry
 
-app = FastAPI(title="Agentorium", version="0.2.0")
+@contextlib.asynccontextmanager
+async def lifespan(_app: FastAPI):
+    from .docpipe.jobs import resume_jobs
+
+    await resume_jobs()  # continue document jobs interrupted by a restart
+    yield
+
+
+app = FastAPI(title="Agentorium", version="0.2.0", lifespan=lifespan)
 orchestrator = Orchestrator()
 app.include_router(docpipe_router)
 WEB_DIR = ROOT / "web"
