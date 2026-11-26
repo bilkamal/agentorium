@@ -108,3 +108,58 @@ def make_pdf(tmp: Path, pages: tuple[str, ...] = ("Halaman pertama berisi pendah
     path = tmp / "doc.pdf"
     path.write_bytes(bytes(out))
     return path
+
+
+W_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+
+
+def _insert_before_sectpr(d, el):
+    d.element.body.insert(len(d.element.body) - 1, el)
+
+
+def make_nested_sdt_docx(tmp: Path) -> Path:
+    """Table with a nested table in one cell, then a body-level content control (sdt)."""
+    from docx.oxml import parse_xml
+
+    d = docx.Document()
+    d.add_heading("Bab 1", 1)
+    t = d.add_table(rows=1, cols=2)
+    t.cell(0, 0).text = "Luar"
+    t.cell(0, 1).text = "Sel induk"
+    t.cell(0, 1).add_table(rows=1, cols=1).cell(0, 0).text = "NESTED"
+    _insert_before_sectpr(d, parse_xml(f'<w:sdt {W_NS}><w:sdtContent><w:p><w:r><w:t>INSDT</w:t></w:r></w:p></w:sdtContent></w:sdt>'))
+    d.add_paragraph("Sesudah")
+    return _save(d, tmp / "nested.docx")
+
+
+def make_move_docx(tmp: Path) -> Path:
+    """Only tracked change is a move (w:moveFrom / w:moveTo)."""
+    from docx.oxml import parse_xml
+
+    d = docx.Document()
+    d.add_heading("Bab 1", 1)
+    _insert_before_sectpr(d, parse_xml(
+        f'<w:p {W_NS}><w:moveFrom w:id="1" w:author="x" w:date="2026-01-01T00:00:00Z"><w:r><w:t>DIPINDAH</w:t></w:r></w:moveFrom></w:p>'))
+    _insert_before_sectpr(d, parse_xml(
+        f'<w:p {W_NS}><w:r><w:t xml:space="preserve">tetap </w:t></w:r>'
+        f'<w:moveTo w:id="2" w:author="x" w:date="2026-01-01T00:00:00Z"><w:r><w:t>DIPINDAH</w:t></w:r></w:moveTo></w:p>'))
+    return _save(d, tmp / "move.docx")
+
+
+def make_bad_outline_docx(tmp: Path) -> Path:
+    p = make_outline_level_docx(tmp)
+    import zipfile
+
+    src = zipfile.ZipFile(p)
+    out = tmp / "badoutline.docx"
+    with zipfile.ZipFile(out, "w") as z:
+        for item in src.infolist():
+            data = src.read(item.filename)
+            if item.filename == "word/document.xml":
+                data = data.replace(b'w:outlineLvl w:val="0"', b'w:outlineLvl w:val="x"')
+            z.writestr(item, data)
+    return out
+
+
+def make_blank_pdf(tmp: Path) -> Path:
+    return make_pdf(tmp, pages=("",))

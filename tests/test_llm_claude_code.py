@@ -167,3 +167,53 @@ def test_live_claude_code_structured():
     schema = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"]}
     out = asyncio.run(make_client().complete_json("Jawab sesuai skema.", [{"role": "user", "content": "Balas ok=true"}], schema))
     assert out["ok"] is True
+
+
+def test_plain_text_login_error_is_classified(fake_claude):
+    fake_claude.mode("plain_login")
+    with pytest.raises(LLMError, match="claude login"):
+        asyncio.run(make_client().complete_json("sys", USER, {"type": "object"}))
+
+
+def test_plain_text_usage_limit_is_rate_limited(fake_claude):
+    fake_claude.mode("plain_ratelimit")
+    with pytest.raises(LLMRateLimited):
+        asyncio.run(make_client().complete_json("sys", USER, {"type": "object"}))
+
+
+def test_plain_text_crash_mentions_exit_code(fake_claude):
+    fake_claude.mode("plain_garbage")
+    with pytest.raises(LLMError, match="139"):
+        asyncio.run(make_client().complete_json("sys", USER, {"type": "object"}))
+
+
+def test_non_executable_binary_raises_llm_error(fake_claude, tmp_path):
+    f = tmp_path / "noexec"
+    f.write_text("#!/bin/sh\n")
+    f.chmod(0o644)
+    object.__setattr__(settings, "claude_bin", str(f))
+    with pytest.raises(LLMError, match="cannot start"):
+        asyncio.run(make_client().complete_json("sys", USER, {"type": "object"}))
+
+
+def test_cancel_kills_claude_process(fake_claude, monkeypatch, tmp_path):
+    fake_claude.mode("sleep")
+    monkeypatch.setenv("FAKE_CLAUDE_SLEEP", "20")
+    pid_file = tmp_path / "pid"
+    monkeypatch.setenv("FAKE_CLAUDE_PID", str(pid_file))
+
+    async def run_and_cancel():
+        task = asyncio.create_task(make_client().complete_json("sys", USER, {"type": "object"}))
+        for _ in range(100):
+            await asyncio.sleep(0.05)
+            if pid_file.exists() and pid_file.read_text():
+                break
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run_and_cancel())
+    pid = int(pid_file.read_text())
+    time.sleep(0.2)
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)

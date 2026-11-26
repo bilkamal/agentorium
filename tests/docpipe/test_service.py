@@ -91,3 +91,10 @@ def test_restore_creates_new_version_with_same_uids(store, tmp_path):
     assert [(b.text, b.uid) for b in b3] == [(b.text, b.uid) for b in b1]
     assert version_file(store, v3, "current").read_bytes() == version_file(store, v1, "current").read_bytes()
     assert store.get_document(d.id).latest_version_id == v3.id
+
+
+def test_pdf_without_text_is_flagged(store, tmp_path):
+    from .fixtures import make_blank_pdf
+
+    _, v = ingest(store, filename="scan.pdf", data=make_blank_pdf(tmp_path).read_bytes())
+    assert "no_text_extracted" in v.warnings

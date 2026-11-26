@@ -14,6 +14,7 @@
       src_upload: 'unggah', src_rollback: 'rollback', src_revision: 'revisi AI', src_instructed_revision: 'revisi dari bahan', src_update: 'update berkala',
       st_ready: 'siap', st_processing: 'diproses', st_failed: 'gagal',
       warn_tracked_changes_accepted: 'Dokumen berisi tracked changes; semua perubahan diterima di versi kerja. File asli tetap bisa diunduh.',
+      warn_no_text_extracted: 'Tidak ada teks yang terbaca (mungkin PDF hasil scan). Dokumen ini tidak bisa direview sebelum di-OCR.',
       t_heading: 'judul', t_paragraph: 'paragraf', t_list_item: 'daftar', t_table_cell: 'sel tabel',
     },
     en: {
@@ -26,6 +27,7 @@
       src_upload: 'upload', src_rollback: 'rollback', src_revision: 'AI revision', src_instructed_revision: 'revision from notes', src_update: 'periodic update',
       st_ready: 'ready', st_processing: 'processing', st_failed: 'failed',
       warn_tracked_changes_accepted: 'The document had tracked changes; all were accepted in the working version. The original file can still be downloaded.',
+      warn_no_text_extracted: 'No text could be extracted (maybe a scanned PDF). It cannot be reviewed until it is OCRed.',
       t_heading: 'heading', t_paragraph: 'paragraph', t_list_item: 'list', t_table_cell: 'table cell',
     },
   };

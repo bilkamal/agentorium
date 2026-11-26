@@ -50,3 +50,16 @@ def test_reordered_duplicate_texts_do_not_share_uid():
     assign_uids(new, prev)
     uids = [b.uid for b in new]
     assert len(set(uids)) == 4
+
+
+def test_large_replaced_region_is_fast():
+    import time
+
+    n = 1500
+    prev = blocks(*[f"Nilai penjualan cabang {i} bulan lalu adalah {i * 7} juta rupiah." for i in range(n)],
+                  uids=[f"u{i}" for i in range(n)])
+    new = blocks(*[f"Nilai penjualan cabang {i} bulan lalu adalah {i * 7 + 1} juta rupiah." for i in range(n)])
+    t = time.monotonic()
+    assign_uids(new, prev)
+    assert time.monotonic() - t < 5
+    assert [b.uid for b in new] == [f"u{i}" for i in range(n)]

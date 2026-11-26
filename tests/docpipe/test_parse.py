@@ -106,3 +106,29 @@ def test_corrupt_pdf_raises_parse_error(tmp_path):
     bad.write_bytes(b"%PDF-rusak")
     with pytest.raises(ParseError):
         parse_pdf(bad)
+
+
+def test_nested_table_and_sdt_text_not_lost(tmp_path):
+    from .fixtures import make_nested_sdt_docx
+
+    blocks = parse_docx(make_nested_sdt_docx(tmp_path)).blocks
+    texts = [b.text for b in blocks]
+    assert texts == ["Bab 1", "Luar", "Sel induk", "NESTED", "INSDT", "Sesudah"]
+    nested = blocks[3]
+    assert nested.type == "table_cell" and nested.table_index == 1 and (nested.row, nested.col) == (0, 0)
+
+
+def test_move_revisions_detected_and_accepted(tmp_path):
+    from .fixtures import make_move_docx
+
+    dst = tmp_path / "w.docx"
+    assert accept_tracked_changes(make_move_docx(tmp_path), dst) is True
+    texts = [b.text for b in parse_docx(dst).blocks]
+    assert texts == ["Bab 1", "tetap DIPINDAH"]
+
+
+def test_malformed_xml_value_raises_parse_error(tmp_path):
+    from .fixtures import make_bad_outline_docx
+
+    with pytest.raises(ParseError):
+        parse_docx(make_bad_outline_docx(tmp_path))

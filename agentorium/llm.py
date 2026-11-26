@@ -58,6 +58,15 @@ def build_claude_cmd(model: str, system: str, schema: dict | None, effort: str |
     return cmd
 
 
+async def _kill(proc) -> None:
+    if proc.returncode is None:
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        await proc.wait()
+
+
 def _flatten_messages(messages: list[dict]) -> str:
     if len(messages) == 1:
         return str(messages[0]["content"])
@@ -106,6 +115,12 @@ class LLMClient:
             raise LLMError(f"{self.cfg.name}: invalid JSON from {self.cfg.provider}")
         return out
 
+    def _raise_for_message(self, message: str, status) -> None:
+        if status == 429 or _RATE_LIMIT_RE.search(message):
+            raise LLMRateLimited(f"{self.cfg.name}: Claude Code usage limit reached — {message[:200]}")
+        if status in (401, 403) or _LOGIN_RE.search(message):
+            raise LLMError(f"{self.cfg.name}: Claude Code belum login — jalankan `claude login` di server ({message[:200]})")
+
     async def _run_claude(self, system: str, messages: list[dict], schema: dict | None) -> dict:
         cmd = build_claude_cmd(self.cfg.model, system, schema, self.cfg.effort)
         cwd = settings.data_dir / "claude_cwd"
@@ -118,25 +133,29 @@ class LLMClient:
                     stderr=asyncio.subprocess.PIPE, cwd=str(cwd))
             except FileNotFoundError as exc:
                 raise LLMError(f"{self.cfg.name}: claude CLI not found ({settings.claude_bin})") from exc
+            except OSError as exc:  # not executable, argv too long, ...
+                raise LLMError(f"{self.cfg.name}: cannot start Claude Code ({exc})") from exc
             try:
                 stdout, stderr = await asyncio.wait_for(proc.communicate(prompt), settings.claude_timeout)
             except asyncio.TimeoutError as exc:
-                proc.kill()
-                await proc.wait()
+                await _kill(proc)
                 raise LLMError(f"{self.cfg.name}: Claude Code timeout after {settings.claude_timeout}s") from exc
+            except BaseException:  # cancelled: never leave the CLI running and burning quota
+                await _kill(proc)
+                raise
+        out_text, err_text = stdout.decode(errors="replace"), stderr.decode(errors="replace")
         try:
-            data = json.loads(stdout.decode(errors="replace"))
-        except json.JSONDecodeError as exc:
-            detail = (stderr.decode(errors="replace") or stdout.decode(errors="replace"))[:300]
-            raise LLMError(f"{self.cfg.name}: unreadable Claude Code output: {detail}") from exc
+            data = json.loads(out_text)
+        except json.JSONDecodeError:
+            data = None
+        if not isinstance(data, dict):
+            message = (err_text + "\n" + out_text).strip()
+            self._raise_for_message(message, None)
+            raise LLMError(f"{self.cfg.name}: Claude Code failed (exit {proc.returncode}): {message[:300]}")
         self.last_usage = data.get("usage")
         if data.get("is_error"):
             message = str(data.get("result") or "")
-            status = data.get("api_error_status")
-            if status == 429 or _RATE_LIMIT_RE.search(message):
-                raise LLMRateLimited(f"{self.cfg.name}: Claude Code usage limit reached — {message[:200]}")
-            if status in (401, 403) or _LOGIN_RE.search(message):
-                raise LLMError(f"{self.cfg.name}: Claude Code belum login — jalankan `claude login` di server ({message[:200]})")
+            self._raise_for_message(message, data.get("api_error_status"))
             raise LLMError(f"{self.cfg.name}: Claude Code error: {message[:300]}")
         return data
 

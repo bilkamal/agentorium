@@ -13,6 +13,7 @@ from .versions import assign_uids
 ALLOWED_EXTENSIONS = {".docx", ".pdf"}
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 TRACKED_WARNING = "tracked_changes_accepted"
+NO_TEXT_WARNING = "no_text_extracted"
 
 
 class IngestError(Exception):
@@ -62,6 +63,8 @@ def ingest(store: Store, *, filename: str, data: bytes, document_id: str | None 
             parsed = parse_docx(path)
         else:
             parsed = parse_pdf(path)
+        if not parsed.blocks:
+            warnings.append(NO_TEXT_WARNING)
         assign_uids(parsed.blocks, store.get_blocks(prev.id) if prev else None)
         store.save_structure(version.id, parsed)
         version = store.update_version(version.id, status="ready", warnings=warnings + parsed.warnings,

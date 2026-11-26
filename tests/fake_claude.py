@@ -5,6 +5,9 @@ import sys
 import time
 
 mode = os.environ.get("FAKE_CLAUDE_MODE", "ok")
+if os.environ.get("FAKE_CLAUDE_PID"):
+    with open(os.environ["FAKE_CLAUDE_PID"], "w") as fh:
+        fh.write(str(os.getpid()))
 if os.environ.get("FAKE_CLAUDE_ARGS"):
     with open(os.environ["FAKE_CLAUDE_ARGS"], "w") as fh:
         json.dump(sys.argv[1:], fh)
@@ -16,6 +19,16 @@ if os.environ.get("FAKE_CLAUDE_STDIN"):
 if mode == "sleep":
     time.sleep(float(os.environ.get("FAKE_CLAUDE_SLEEP", "10")))
     mode = "ok"
+
+if mode == "plain_login":
+    print("Invalid API key · Please run /login", file=sys.stderr)
+    sys.exit(1)
+if mode == "plain_ratelimit":
+    print("Claude AI usage limit reached|1764158400")
+    sys.exit(1)
+if mode == "plain_garbage":
+    print("segmentation fault", file=sys.stderr)
+    sys.exit(139)
 
 outputs = {
     "ok": {"type": "result", "is_error": False, "result": "{\"a\":1}", "structured_output": {"a": 1},
