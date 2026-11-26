@@ -145,8 +145,15 @@ async def apply_job_edits(job: Job, *, source: str, kind: str, extra_changes: li
     for e in approved:  # one edit per block: a block in two tasks must not be edited twice
         by_block[e["block_id"]] = e
     approved = list(by_block.values())
-    edits = [BlockEdit(e["block_id"], blocks[e["block_id"]].text, e["new_text"], e["reason"], e["source_ids"])
-             for e in approved]
+    texts = [b.text for b in sorted(blocks.values(), key=lambda b: b.ordinal)]
+    pos = {b.id: n for n, b in enumerate(sorted(blocks.values(), key=lambda b: b.ordinal))}
+
+    def where(block):  # this block among the document's blocks with exactly the same text
+        before = texts[:pos[block.id]].count(block.text)
+        return before, texts.count(block.text)
+
+    edits = [BlockEdit(e["block_id"], blocks[e["block_id"]].text, e["new_text"], e["reason"], e["source_ids"],
+                       *where(blocks[e["block_id"]])) for e in approved]
     tracked, clean, results = await asyncio.to_thread(apply_block_edits, version_file(store, base).read_bytes(), edits)
     new_id = existing.id if existing else None
     if clean is not None and existing is None:

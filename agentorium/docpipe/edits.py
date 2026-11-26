@@ -24,6 +24,10 @@ class BlockEdit:
     new_text: str
     reason: str
     sources: list[str] = field(default_factory=list)
+    # where this block sits among the document's blocks with exactly the same text (counted in order):
+    # lets a heading that also appears in the table of contents, or a cell reading "Status", be edited in place
+    occurrence: int | None = None
+    total: int | None = None
 
 
 @dataclass
@@ -186,36 +190,157 @@ def _inherit_replaced_formatting(docx: bytes) -> bytes:
     return out.getvalue()
 
 
+_GAP = re.compile(r"(?:[ \t]*\{#cell:[0-9A-Fa-f]+\})?\s*")  # between two paragraphs of one block in adeu's text
+
+
+_LEAD = re.compile(r"[ \t]*(?:#{1,6} |[-*+] |\d+[.)] )?[ \t]*")
+_TRAIL = re.compile(r"[ \t]*(?:\{#cell:[0-9A-Fa-f]+\})?[ \t]*")
+
+
+def _whole(full: str, start: int, end: int) -> bool:
+    """full[start:end] is a whole paragraph or cell, not part of a longer sentence."""
+    a = max(full.rfind("\n", 0, start), full.rfind("|", 0, start)) + 1
+    b = min([i for i in (full.find("\n", end), full.find("|", end)) if i >= 0] or [len(full)])
+    return bool(_LEAD.fullmatch(full, a, start)) and bool(_TRAIL.fullmatch(full, end, b))
+
+
+def _chains(full: str, targets: list[str]) -> list[list[tuple[int, int]]]:
+    """Every place where the block's paragraphs appear, whole, one after another; one span per paragraph."""
+    out = []
+    for m in re.finditer(re.escape(targets[0]), full):
+        if not _whole(full, *m.span()):
+            continue
+        spans, pos = [m.span()], m.end()
+        for t in targets[1:]:
+            g = _GAP.match(full, pos)
+            start = g.end() if g and "\n" in full[pos:g.end()] else -1
+            if start < 0 or not full.startswith(t, start) or not _whole(full, start, start + len(t)):
+                break
+            spans.append((start, start + len(t)))
+            pos = start + len(t)
+        if len(spans) == len(targets):
+            out.append(spans)
+    return out
+
+
+def _anchored(full: str, target: str, start: int, end: int) -> str | None:
+    """A regex matching `target` only at full[start:end], by the text around it. The `\\A…\\Z` branch lets
+    adeu's own re.sub on the matched span alone rewrite it."""
+    lit = re.escape(target)
+    for n in (8, 16, 32, 64, 128, 256):
+        before, after = full[max(0, start - n):start], full[end:end + n]
+        pat = f"(?<={re.escape(before)}){lit}(?={re.escape(after)})" if before else f"\\A{lit}(?={re.escape(after)})"
+        hits = [m.start() for m in re.finditer(pat, full)]
+        if hits == [start]:
+            return f"{pat}|\\A{lit}\\Z"
+    return None
+
+
+def _changed_span(old: str, new: str) -> tuple[int, str, str]:
+    """(offset in old, old part, new part) covering only the words that differ, so the tracked change marks those
+    words rather than the whole paragraph. The old part is never empty (adeu needs text to anchor on)."""
+    a, b = re.split(r"(\s+)", old), re.split(r"(\s+)", new)
+    p = 0
+    while p < min(len(a), len(b)) and a[p] == b[p]:
+        p += 1
+    s = 0
+    while s < min(len(a), len(b)) - p and a[len(a) - 1 - s] == b[len(b) - 1 - s]:
+        s += 1
+    while not "".join(a[p:len(a) - s]).strip():  # pure insertion (or whitespace only): take a neighbouring word
+        if p > 0:
+            p -= 1
+        elif s > 0:
+            s -= 1
+        else:
+            break
+    off = len("".join(a[:p]))
+    return off, "".join(a[p:len(a) - s]), "".join(b[p:len(b) - s])
+
+
+def _parts(e: BlockEdit, proj: dict[str, str], full: str):
+    """(ModifyText kwargs per changed paragraph, error). A block spanning several paragraphs (a table cell) is
+    edited paragraph by paragraph, at this block's own place in the document."""
+    olds = e.old_text.split("\n")
+    if len(olds) == 1:  # one paragraph stays one paragraph: a split would show as the whole paragraph rewritten
+        news = [re.sub(r"\s*\n\s*", " ", e.new_text).strip()]
+    else:
+        news = e.new_text.split("\n")
+    if len(news) != len(olds):
+        return None, "jumlah paragraf dalam blok berubah; edit per paragraf tidak bisa dipetakan"
+    mds = [proj.get(o) or o for o in olds]
+    chains = _chains(full, mds)
+    if len(chains) == 1:
+        chain = chains[0]
+    elif e.occurrence is not None and len(chains) == e.total and e.occurrence < len(chains):
+        chain = chains[e.occurrence]
+    elif not chains and len(olds) == 1 and (e.occurrence is None or e.total == 1):
+        chain = None  # not found verbatim: let adeu's own matching (quotes, clean view) try
+    else:
+        return None, (f"teks blok muncul {len(chains)} kali di dokumen dan letaknya tidak bisa dipastikan"
+                      if chains else "teks blok tidak ditemukan di dokumen")
+    parts = []
+    for i, (old, new, md) in enumerate(zip(olds, news, mds)):
+        if old == new:
+            continue
+        new_md = carry_markup(md, old, new) if md != old else None
+        repl = new_md if new_md is not None else _escape(new)
+        if chain is None or len(re.findall(re.escape(md), full)) == 1:
+            parts.append({"target_text": md, "new_text": repl})
+            continue
+        start, _ = chain[i]
+        off, old_mid, new_mid = _changed_span(md, repl)
+        pat = _anchored(full, old_mid, start + off, start + off + len(old_mid))
+        if pat is None:
+            return None, "teks blok berulang dan konteks sekitarnya tidak unik"
+        parts.append({"target_text": pat, "new_text": new_mid.replace("\\", "\\\\"), "regex": True})
+    return parts, None
+
+
 def apply_block_edits(docx: bytes, edits: list[BlockEdit], author: str = "DocPipe"
                       ) -> tuple[bytes | None, bytes | None, list[EditResult]]:
-    """Apply all edits in one batch. Each edit replaces one whole block text, matched strictly (must be unique)."""
+    """Apply all edits in one batch. Each edit replaces one block's text at that block's own place (a text that
+    repeats elsewhere is located by `occurrence`); a multi-paragraph block is edited paragraph by paragraph."""
     from adeu import ModifyText, RedlineEngine
 
     if not edits:
         return None, None, []
     proj = _projections(docx)
-    changes = []
-    for e in edits:
-        md = proj.get(e.old_text)
-        new_md = carry_markup(md, e.old_text, e.new_text) if md and md != e.old_text else None
-        if new_md is not None:
-            changes.append(ModifyText(target_text=md, new_text=new_md, match_mode="strict"))
-        else:
-            changes.append(ModifyText(target_text=md or e.old_text, new_text=_escape(e.new_text), match_mode="strict"))
     engine = RedlineEngine(io.BytesIO(docx), author=author)
-    try:
-        report = engine.process_batch(changes, partial=True)
-    except Exception as exc:  # adeu refused the whole batch
-        log.warning("adeu batch failed: %s", exc)
-        return None, None, [EditResult(e.block_id, "needs_human", f"adeu: {exc}"[:500]) for e in edits]
+    full = engine.mapper.full_text
+    changes, owner, errors = [], [], {}
+    for k, e in enumerate(edits):
+        parts, why = _parts(e, proj, full)
+        if why:
+            errors[k] = why
+            continue
+        for p in parts:
+            changes.append(ModifyText(match_mode="strict", **p))
+            owner.append(k)
+    report = {"edits": []}
+    if changes:
+        try:
+            report = engine.process_batch(changes, partial=True)
+        except Exception as exc:  # adeu refused the whole batch
+            log.warning("adeu batch failed: %s", exc)
+            return None, None, [EditResult(e.block_id, "needs_human", f"adeu: {exc}"[:500]) for e in edits]
     by_index = {r.get("index", i): r for i, r in enumerate(report.get("edits") or [])}
+    status: dict[int, list] = {}
+    for i, k in enumerate(owner):
+        status.setdefault(k, []).append(by_index.get(i) or {})
     results = []
-    for i, e in enumerate(edits):
-        r = by_index.get(i) or {}
-        if r.get("status") == "applied":
+    for k, e in enumerate(edits):
+        if k in errors:
+            results.append(EditResult(e.block_id, "needs_human", errors[k]))
+            continue
+        rs = status.get(k, [])
+        failed = [r for r in rs if r.get("status") != "applied"]
+        if rs and not failed:
             results.append(EditResult(e.block_id, "applied"))
         else:
-            results.append(EditResult(e.block_id, "needs_human", str(r.get("error") or "tidak diterapkan")[:500]))
+            err = str((failed[0] if failed else {}).get("error") or "tidak diterapkan")
+            if failed and len(failed) < len(rs):
+                err = "sebagian paragraf sudah diubah, sisanya gagal — periksa blok ini: " + err
+            results.append(EditResult(e.block_id, "needs_human", err[:500]))
     if not any(r.status == "applied" for r in results):
         return None, None, results
     tracked = _inherit_replaced_formatting(engine.save_to_stream().getvalue())
