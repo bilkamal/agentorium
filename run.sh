@@ -11,6 +11,6 @@ if [ ! -f .env ]; then
   cp .env.example .env
 fi
 
-HOST="${OFFICE_HOST:-$(grep -E '^OFFICE_HOST=' .env | cut -d= -f2)}"
-PORT="${OFFICE_PORT:-$(grep -E '^OFFICE_PORT=' .env | cut -d= -f2)}"
+HOST="${OFFICE_HOST:-$(grep -E '^OFFICE_HOST=' .env | cut -d= -f2 || true)}"
+PORT="${OFFICE_PORT:-$(grep -E '^OFFICE_PORT=' .env | cut -d= -f2 || true)}"
 exec "$PY" -m uvicorn agentorium.server:app --host "${HOST:-127.0.0.1}" --port "${PORT:-8000}" "$@"
