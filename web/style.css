@@ -220,3 +220,8 @@ button, select, textarea { font: inherit; color: inherit; }
 .tag.ch-rejected, .tag.cmp-removed { color: var(--bad); }
 .tag.ch-suggestion, .tag.in-not_applicable { color: var(--info); }
 #compare-form select { max-width: 40vw; min-width: 0; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+
+/* inline word diff, as in a code review: unchanged text plain, only changed words marked */
+.findings-table td.diff { white-space: pre-wrap; line-height: 1.6; min-width: 24rem; }
+.wd-del { color: var(--bad); background: color-mix(in srgb, var(--bad) 16%, transparent); text-decoration: line-through; border-radius: 3px; padding: 0 1px; }
+.wd-ins { color: var(--ok); background: color-mix(in srgb, var(--ok) 18%, transparent); text-decoration: none; border-radius: 3px; padding: 0 1px; }

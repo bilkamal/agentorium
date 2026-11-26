@@ -175,7 +175,7 @@
         <div id="changes-box" hidden>
           <div class="findings-head"><b data-d="changes">Perubahan</b> <span id="changes-counts" class="muted"></span></div>
           <div class="table-wrap"><table id="changes-table" class="findings-table"><thead><tr>
-            <th data-d="col_location">Lokasi</th><th data-d="col_old">Teks lama</th><th data-d="col_new">Teks baru</th>
+            <th data-d="col_location">Lokasi</th><th data-d="col_change">Perubahan</th>
             <th data-d="col_reason">Alasan / catatan</th><th data-d="status">Status</th>
           </tr></thead><tbody id="changes-rows"></tbody></table></div>
         </div>
@@ -189,7 +189,7 @@
         </form>
         <div id="cmp-summary" class="muted"></div>
         <div class="table-wrap"><table id="cmp-table" class="findings-table" hidden><thead><tr>
-          <th data-d="status">Status</th><th data-d="col_location">Lokasi</th><th data-d="col_old">Teks lama</th><th data-d="col_new">Teks baru</th>
+          <th data-d="status">Status</th><th data-d="col_location">Lokasi</th><th data-d="col_change">Perubahan</th>
         </tr></thead><tbody id="cmp-rows"></tbody></table></div>
       </section>
       <h3><span data-d="outline">Outline</span> <small id="outline-version" class="muted"></small></h3>
@@ -244,6 +244,7 @@
 <template id="step-tpl"><li><span class="dot"></span><span class="title"></span><span class="meta"></span></li></template>
 <script src="/static/scene.js"></script>
 <script src="/static/app.js"></script>
+<script src="/static/worddiff.js"></script>
 <script src="/static/docs.js"></script>
 </body>
 </html>

@@ -59,3 +59,38 @@ def test_update_controls_present_and_wired(client):
         assert marker in html, marker
     js = client.get("/static/docs.js").text
     assert "/updates" in js and "kind_update" in js and "'update'" in js
+
+
+def _node_diff(old: str, new: str):
+    import json
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    if not shutil.which("node"):
+        pytest.skip("node not installed")
+    src = Path(__file__).resolve().parents[2] / "web" / "worddiff.js"
+    code = f"const W = require({json.dumps(str(src))}); console.log(JSON.stringify(W.diff({json.dumps(old)}, {json.dumps(new)})));"
+    return json.loads(subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout)
+
+
+def test_word_diff_marks_only_changed_words():
+    ops = _node_diff("Sebanyak 240 tiket memuat Incident ID dan terdapat 255 ID unik.",
+                     "Sebanyak 240 tiket memuat Incident ID, dengan total 255 Incident ID unik.")
+    assert "".join(t for k, t in ops if k != "ins") == "Sebanyak 240 tiket memuat Incident ID dan terdapat 255 ID unik."
+    assert "".join(t for k, t in ops if k != "del") == "Sebanyak 240 tiket memuat Incident ID, dengan total 255 Incident ID unik."
+    changed = "".join(t for k, t in ops if k != "eq")
+    assert "Sebanyak 240 tiket memuat" not in changed and len(changed) < 45
+
+
+def test_word_diff_long_paragraph_stays_small():
+    base = " ".join(f"kata{i}" for i in range(3000))
+    ops = _node_diff(base, base.replace("kata1500", "KATA"))
+    assert [t for k, t in ops if k != "eq"] == ["kata1500", "KATA"]
+
+
+def test_tables_use_inline_diff(client):
+    html = client.get("/").text
+    assert "/static/worddiff.js" in html and html.index("/static/worddiff.js") < html.index("/static/docs.js")
+    js = client.get("/static/docs.js").text
+    assert js.count("WordDiff.render(") >= 2
