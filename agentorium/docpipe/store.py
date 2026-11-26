@@ -382,6 +382,15 @@ class Store:
             self._db.execute(f"UPDATE tasks SET {','.join(f'{k}=?' for k in fields)} WHERE id=?",
                              (*fields.values(), task_id))
 
+    def requeue_failed_tasks(self, job_id: str) -> int:
+        """Give failed tasks a fresh start and reopen the job (queued, no error, no failed count)."""
+        with self._lock, self._db:
+            n = self._db.execute("UPDATE tasks SET status='queued', attempts=0, error=NULL WHERE job_id=? AND "
+                                 "status='failed'", (job_id,)).rowcount
+            self._db.execute("UPDATE jobs SET status='queued', failed_tasks=0, error=NULL, finished_at=NULL "
+                             "WHERE id=?", (job_id,))
+            return n
+
     def requeue_running_tasks(self, job_id: str) -> int:
         with self._lock, self._db:
             return self._db.execute("UPDATE tasks SET status='queued' WHERE job_id=? AND status='running'",

@@ -149,3 +149,17 @@ def test_delete_document_removes_its_office_sessions(client, tmp_path, team):  #
     assert client.delete(f"/api/docs/{doc_id}").status_code == 200
     assert orchestrator.get(s.id) is None and not s.path.exists()
     assert orchestrator.get(other.id) is not None
+
+
+def test_retry_endpoint(client, tmp_path):
+    doc_id, vid = upload(client, tmp_path)
+    store = get_store()
+    job = store.create_job(doc_id, vid, "revision", {})
+    store.update_job(job.id, status="partial")
+    assert client.post(f"/api/docs/jobs/{job.id}/retry").status_code == 409  # only reviews are retried
+    assert client.post("/api/docs/jobs/nope/retry").status_code == 404
+
+
+def test_ui_has_retry_button(client):
+    assert 'id="review-retry"' in client.get("/").text
+    assert "/retry" in client.get("/static/docs.js").text

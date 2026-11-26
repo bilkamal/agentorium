@@ -16,7 +16,7 @@
       warn_tracked_changes_accepted: 'Dokumen berisi tracked changes; semua perubahan diterima di versi kerja. File asli tetap bisa diunduh.',
       warn_no_text_extracted: 'Tidak ada teks yang terbaca (mungkin PDF hasil scan). Dokumen ini tidak bisa direview sebelum di-OCR.',
       t_heading: 'judul', t_paragraph: 'paragraf', t_list_item: 'daftar', t_table_cell: 'sel tabel',
-      review: 'Review', review_start: 'Review versi ini', cancel: 'Batalkan', see_office: 'Lihat di Kantor',
+      review: 'Review', review_start: 'Review versi ini', cancel: 'Batalkan', retry_failed: 'Ulangi yang gagal', see_office: 'Lihat di Kantor',
       cat_language: 'Bahasa', cat_consistency: 'Konsistensi', cat_structure: 'Struktur', cat_substance: 'Substansi',
       findings: 'Temuan', all_categories: 'Semua kategori', all_status: 'Semua status',
       fs_valid: 'Valid', fs_needs_human: 'Perlu dicek', fs_rejected: 'Ditolak',
@@ -61,7 +61,7 @@
       warn_tracked_changes_accepted: 'The document had tracked changes; all were accepted in the working version. The original file can still be downloaded.',
       warn_no_text_extracted: 'No text could be extracted (maybe a scanned PDF). It cannot be reviewed until it is OCRed.',
       t_heading: 'heading', t_paragraph: 'paragraph', t_list_item: 'list', t_table_cell: 'table cell',
-      review: 'Review', review_start: 'Review this version', cancel: 'Cancel', see_office: 'See in Office',
+      review: 'Review', review_start: 'Review this version', cancel: 'Cancel', retry_failed: 'Retry failed', see_office: 'See in Office',
       cat_language: 'Language', cat_consistency: 'Consistency', cat_structure: 'Structure', cat_substance: 'Substance',
       findings: 'Findings', all_categories: 'All categories', all_status: 'All statuses',
       fs_valid: 'Valid', fs_needs_human: 'Needs check', fs_rejected: 'Rejected',
@@ -258,6 +258,8 @@
     const v = state.versions.find((x) => x.id === state.versionId);
     $('#doc-review').disabled = active || !v || v.status !== 'ready';
     $('#review-cancel').hidden = !active;
+    $('#review-retry').hidden = !data || !['partial', 'failed'].includes(data.job.status)
+      || !(data.job.failed_tasks || data.job.error);
     $('#review-office').hidden = !data?.job.params?.session_id;
     const prog = $('#review-progress');
     prog.innerHTML = '';
@@ -284,6 +286,11 @@
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ categories: cats }) });
       await refreshJob(res.job.id);
     } catch (err) { showError(err.message); renderJob(state.job); }
+  }
+
+  async function retryReview() {
+    if (!state.job) return;
+    try { await api(`/api/docs/jobs/${state.job.job.id}/retry`, { method: 'POST' }); await refreshJob(state.job.job.id); } catch (err) { showError(err.message); }
   }
 
   async function cancelReview() {
@@ -670,6 +677,7 @@
   $('#doc-delete').addEventListener('click', deleteDoc);
   $('#doc-review').addEventListener('click', startReview);
   $('#review-cancel').addEventListener('click', cancelReview);
+  $('#review-retry').addEventListener('click', retryReview);
   $('#review-office').addEventListener('click', openOffice);
   $('#findings-status').addEventListener('change', () => loadFindings().catch((err) => showError(err.message)));
   $('#findings-cat').addEventListener('change', () => loadFindings().catch((err) => showError(err.message)));

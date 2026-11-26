@@ -68,6 +68,18 @@ class JobRunner:
         if t is not None:
             await asyncio.gather(t, return_exceptions=True)
 
+    async def retry(self, job_id: str) -> bool:
+        """Run a partly failed job again: only its failed tasks, then its finalizer. Finished tasks are kept."""
+        store = get_store()
+        job = store.get_job(job_id)
+        if job is None or job.status not in ("partial", "failed") or self.is_running(job_id):
+            return False
+        if not job.failed_tasks and not job.error:
+            return False
+        store.requeue_failed_tasks(job_id)
+        await self.start(job_id)
+        return True
+
     async def cancel(self, job_id: str) -> bool:
         store = get_store()
         job = store.get_job(job_id)
