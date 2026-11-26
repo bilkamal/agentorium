@@ -1,5 +1,7 @@
 # Agentorium — the office where your agents live
 
+> **Fork ini menambahkan DocPipe**: tab *Dokumen* untuk unggah, versi, dan (bertahap) review & revisi DOCX/PDF dengan AI, termasuk provider `claude_code` (langganan Claude Code). Lihat [docs/DOCPIPE.md](docs/DOCPIPE.md).
+
 <p align="center"><img src="docs/demo.gif" width="640" alt="Agents walking between the lounge and their desks while a task runs"></p>
 
 **A live 2D office that visualises any multi-agent workflow.** Each agent is a character:
