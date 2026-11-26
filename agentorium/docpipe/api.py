@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 
 from ..config import settings
 from .index import schedule_index
+from .retrieval import search
 from .models import Version
 from .service import MAX_UPLOAD_BYTES, IngestError, ingest, restore, version_file
 from .store import get_store
@@ -131,3 +132,13 @@ async def restore_version(version_id: str):
         raise HTTPException(422, str(exc)) from exc
     schedule_index(version.id)
     return {"version": _version_json(version)}
+
+
+@router.get("/versions/{version_id}/search")
+async def search_version(version_id: str, q: str = "", k: int = 8) -> list[dict]:
+    store = get_store()
+    if store.get_version(version_id) is None:
+        raise HTTPException(404, "version not found")
+    hits = await asyncio.to_thread(search, store, version_id, q, k=max(1, min(k, 50)))
+    return [{**asdict(h.chunk), "score": round(h.score, 5), "fts_rank": h.fts_rank, "vec_rank": h.vec_rank}
+            for h in hits]
