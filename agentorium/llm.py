@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import weakref
 
 import httpx
 
@@ -23,11 +24,62 @@ class LLMError(Exception):
     """Raised for any provider failure; message is safe to show in the UI."""
 
 
+class LLMRateLimited(LLMError):
+    """The provider's usage/rate limit was hit; the call can be retried later."""
+
+    def __init__(self, message: str, reset_at: float | None = None):
+        super().__init__(message)
+        self.reset_at = reset_at
+
+
+# ------------------------------------------------------------------ claude code
+_RATE_LIMIT_RE = re.compile(r"(usage|rate)\s*limit", re.I)
+_LOGIN_RE = re.compile(r"login|api key", re.I)
+_cc_semaphores: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = weakref.WeakKeyDictionary()
+
+
+def _cc_semaphore() -> asyncio.Semaphore:
+    """One semaphore per event loop, sized by settings.llm_concurrency."""
+    loop = asyncio.get_running_loop()
+    sem = _cc_semaphores.get(loop)
+    if sem is None:
+        sem = _cc_semaphores[loop] = asyncio.Semaphore(settings.llm_concurrency)
+    return sem
+
+
+def build_claude_cmd(model: str, system: str, schema: dict | None, effort: str | None) -> list[str]:
+    """Headless Claude Code invocation used as a pure LLM (no tools, no settings, no session)."""
+    cmd = [settings.claude_bin, "-p", "--output-format", "json", "--tools", "", "--no-session-persistence",
+           "--strict-mcp-config", "--setting-sources", "", "--model", model, "--system-prompt", system]
+    if schema is not None:
+        cmd += ["--json-schema", json.dumps(schema, ensure_ascii=False)]
+    if effort:
+        cmd += ["--effort", effort]
+    return cmd
+
+
+async def _kill(proc) -> None:
+    if proc.returncode is None:
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        await proc.wait()
+
+
+def _flatten_messages(messages: list[dict]) -> str:
+    if len(messages) == 1:
+        return str(messages[0]["content"])
+    label = {"user": "User", "assistant": "Assistant"}
+    return "\n\n".join(f"{label.get(m['role'], 'User')}: {m['content']}" for m in messages)
+
+
 class LLMClient:
     def __init__(self, cfg):
         self.cfg = cfg
         self._anthropic = None
         self._http: httpx.AsyncClient | None = None
+        self.last_usage: dict | None = None
 
     async def complete(self, system: str, messages: list[dict], *, purpose: str = "", lang: str | None = None) -> str:
         """Return the assistant text for `messages` ([{role, content}] with user/assistant roles)."""
@@ -35,7 +87,77 @@ class LLMClient:
             return await self._complete_anthropic(system, messages)
         if self.cfg.provider == "openai":
             return await self._complete_openai(system, messages)
+        if self.cfg.provider == "claude_code":
+            data = await self._run_claude(system, messages, None)
+            return str(data.get("result") or "")
         return await mock_complete(self.cfg, purpose, messages, lang or settings.lang)
+
+    async def complete_json(self, system: str, messages: list[dict], schema: dict, *, purpose: str = "") -> dict:
+        """Return a JSON object for `messages`. Unparseable output raises LLMError (fail-closed)."""
+        if self.cfg.provider == "mock":
+            return {}
+        if self.cfg.provider == "claude_code":
+            data = await self._run_claude(system, messages, schema)
+            out = data.get("structured_output")
+            if not isinstance(out, dict):
+                try:
+                    out = json.loads(str(data.get("result") or ""))
+                except json.JSONDecodeError:
+                    out = None
+            if not isinstance(out, dict):
+                raise LLMError(f"{self.cfg.name}: invalid JSON from Claude Code")
+            return out
+        from .agents import extract_json
+
+        text = await self.complete(system, messages, purpose=purpose)
+        out = extract_json(text)
+        if out is None:
+            raise LLMError(f"{self.cfg.name}: invalid JSON from {self.cfg.provider}")
+        return out
+
+    def _raise_for_message(self, message: str, status) -> None:
+        if status == 429 or _RATE_LIMIT_RE.search(message):
+            raise LLMRateLimited(f"{self.cfg.name}: Claude Code usage limit reached — {message[:200]}")
+        if status in (401, 403) or _LOGIN_RE.search(message):
+            raise LLMError(f"{self.cfg.name}: Claude Code belum login — jalankan `claude login` di server ({message[:200]})")
+
+    async def _run_claude(self, system: str, messages: list[dict], schema: dict | None) -> dict:
+        cmd = build_claude_cmd(self.cfg.model, system, schema, self.cfg.effort)
+        cwd = settings.data_dir / "claude_cwd"
+        cwd.mkdir(parents=True, exist_ok=True)
+        prompt = _flatten_messages(messages).encode()
+        async with _cc_semaphore():
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE, cwd=str(cwd))
+            except FileNotFoundError as exc:
+                raise LLMError(f"{self.cfg.name}: claude CLI not found ({settings.claude_bin})") from exc
+            except OSError as exc:  # not executable, argv too long, ...
+                raise LLMError(f"{self.cfg.name}: cannot start Claude Code ({exc})") from exc
+            try:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(prompt), settings.claude_timeout)
+            except asyncio.TimeoutError as exc:
+                await _kill(proc)
+                raise LLMError(f"{self.cfg.name}: Claude Code timeout after {settings.claude_timeout}s") from exc
+            except BaseException:  # cancelled: never leave the CLI running and burning quota
+                await _kill(proc)
+                raise
+        out_text, err_text = stdout.decode(errors="replace"), stderr.decode(errors="replace")
+        try:
+            data = json.loads(out_text)
+        except json.JSONDecodeError:
+            data = None
+        if not isinstance(data, dict):
+            message = (err_text + "\n" + out_text).strip()
+            self._raise_for_message(message, None)
+            raise LLMError(f"{self.cfg.name}: Claude Code failed (exit {proc.returncode}): {message[:300]}")
+        self.last_usage = data.get("usage")
+        if data.get("is_error"):
+            message = str(data.get("result") or "")
+            self._raise_for_message(message, data.get("api_error_status"))
+            raise LLMError(f"{self.cfg.name}: Claude Code error: {message[:300]}")
+        return data
 
     # ------------------------------------------------------------------ anthropic
     async def _complete_anthropic(self, system: str, messages: list[dict]) -> str:
