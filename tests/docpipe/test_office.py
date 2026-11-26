@@ -2,6 +2,8 @@ import asyncio
 
 import pytest
 
+from agentorium.config import settings
+
 from agentorium.docpipe import office, review
 from agentorium.docpipe.jobs import runner
 from agentorium.docpipe.office import OfficeBridge
@@ -27,6 +29,7 @@ def orch(tmp_settings):
 def setup(tmp_settings, tmp_path, monkeypatch, fake_embedder):
     store = get_store()
     _, v = ingest(store, filename="a.docx", data=make_basic_docx(tmp_path).read_bytes())
+    object.__setattr__(settings, "llm_concurrency", 1)  # scripted replies are consumed in task order
     calls, replies = [], {"worker": [], "supervisor": []}
     monkeypatch.setattr(review, "make_llm", ScriptedLLM(replies, calls).for_agent)
     n = len(review.plan_tasks(store.get_sections(v.id), store.get_blocks(v.id)))

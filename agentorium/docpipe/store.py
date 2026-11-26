@@ -65,6 +65,60 @@ TASK_FIELDS = ("status", "attempts", "error", "output")
 VERSION_FIELDS = ("status", "error", "warnings", "original_path", "file_path", "note", "index_status", "index_error")
 
 
+class _Result:
+    """Fully fetched result of one statement (so no cursor is shared between threads)."""
+
+    def __init__(self, rows: list, rowcount: int):
+        self._rows, self.rowcount = rows, rowcount
+
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
+
+    def fetchall(self):
+        return self._rows
+
+    def __iter__(self):
+        return iter(self._rows)
+
+
+class _LockedConnection:
+    """One SQLite connection shared by the event loop and worker threads: every statement and every
+    `with db:` transaction runs under the same re-entrant lock, so readers never see another thread's
+    half-finished work or an interleaved cursor."""
+
+    def __init__(self, conn: sqlite3.Connection, lock: threading.RLock):
+        self._conn, self._lock = conn, lock
+
+    def execute(self, sql: str, args=()) -> _Result:
+        with self._lock:
+            cur = self._conn.execute(sql, args)
+            return _Result(cur.fetchall(), cur.rowcount)
+
+    def executemany(self, sql: str, rows) -> _Result:
+        with self._lock:
+            cur = self._conn.executemany(sql, rows)
+            return _Result([], cur.rowcount)
+
+    def executescript(self, sql: str) -> None:
+        with self._lock:
+            self._conn.executescript(sql)
+
+    def commit(self) -> None:
+        with self._lock:
+            self._conn.commit()
+
+    def __enter__(self):
+        self._lock.acquire()
+        self._conn.__enter__()
+        return self
+
+    def __exit__(self, *exc):
+        try:
+            return self._conn.__exit__(*exc)
+        finally:
+            self._lock.release()
+
+
 def _new_id() -> str:
     return uuid.uuid4().hex[:12]
 
@@ -73,8 +127,10 @@ class Store:
     def __init__(self, path: Path):
         self.path = path
         path.parent.mkdir(parents=True, exist_ok=True)
-        self._db = sqlite3.connect(str(path), check_same_thread=False)
-        self._db.row_factory = sqlite3.Row
+        self._lock = threading.RLock()
+        conn = sqlite3.connect(str(path), check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        self._db = _LockedConnection(conn, self._lock)
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA foreign_keys=ON")
         self._db.executescript(SCHEMA)
@@ -84,7 +140,6 @@ class Store:
                 if name not in have:
                     self._db.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
         self._db.commit()
-        self._lock = threading.Lock()
 
     # ------------------------------------------------------------ documents
     def create_document(self, title: str, label: str = "") -> Document:

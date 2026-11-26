@@ -1,6 +1,8 @@
 import time
 
 import pytest
+
+from agentorium.config import settings
 from fastapi.testclient import TestClient
 
 from agentorium.docpipe import review
@@ -47,6 +49,7 @@ def wait_job(c, job_id, statuses=("done", "partial", "failed", "cancelled")):
 
 
 def script(monkeypatch, store, vid):
+    object.__setattr__(settings, "llm_concurrency", 1)  # scripted replies are consumed in task order
     calls, replies = [], {"worker": [], "supervisor": []}
     monkeypatch.setattr(review, "make_llm", ScriptedLLM(replies, calls).for_agent)
     blocks = store.get_blocks(vid)
@@ -77,7 +80,7 @@ def test_second_review_while_running_409(client, tmp_path, team, monkeypatch):  
     _, vid = upload(client, tmp_path)
     monkeypatch.setattr(review, "make_llm", SlowLLM({}, []).for_agent)
     first = client.post(f"/api/docs/versions/{vid}/reviews", json={})
-    assert first.status_code == 202
+    assert first.status_code == 202, first.text
     assert client.post(f"/api/docs/versions/{vid}/reviews", json={}).status_code == 409
     client.post(f"/api/docs/jobs/{first.json()['job']['id']}/cancel")
 

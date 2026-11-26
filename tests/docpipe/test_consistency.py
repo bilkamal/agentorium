@@ -2,6 +2,8 @@ import asyncio
 
 import pytest
 
+from agentorium.config import settings
+
 from agentorium.docpipe import review
 from agentorium.docpipe.consistency import candidate_conflicts, check_consistency, normalize_value
 from agentorium.docpipe.jobs import runner
@@ -87,6 +89,8 @@ def test_start_review_end_to_end_with_fake_llm(tmp_settings, tmp_path, team, llm
     store = get_store()
     _, v = ingest(store, filename="a.docx", data=make_basic_docx(tmp_path).read_bytes())
     replies, calls = llm
+    object.__setattr__(settings, "llm_concurrency", 1)  # scripted replies are consumed in task order
+
     blocks = store.get_blocks(v.id)
     n_tasks = len(review.plan_tasks(store.get_sections(v.id), blocks))
     target = blocks[0]
