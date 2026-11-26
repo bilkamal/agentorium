@@ -76,8 +76,8 @@ def test_compare_api(two):
 
     store, v1, v2 = two
     with TestClient(server.app) as c:
-        r = c.get(f"/api/docs/versions/{v2.id}/compare?base={v1.id}")
+        r = c.get(f"/api/docs/versions/{v1.id}/compare/{v2.id}")
         assert r.status_code == 200 and {d["status"] for d in r.json()["blocks"]} == {"changed", "added", "removed"}
-        r = c.get(f"/api/docs/versions/{v2.id}/compare.docx?base={v1.id}")
+        r = c.get(f"/api/docs/versions/{v1.id}/compare/{v2.id}/redline")
         assert r.status_code == 200 and r.content[:2] == b"PK" and "banding" in r.headers["content-disposition"]
-        assert c.get(f"/api/docs/versions/{v2.id}/compare?base=nope").status_code == 404
+        assert c.get(f"/api/docs/versions/nope/compare/{v2.id}").status_code == 404

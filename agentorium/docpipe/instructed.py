@@ -9,7 +9,7 @@ from .editloop import edit_loop
 from .jobs import runner
 from .models import Job, Task
 from .review import _hooks, pick_agents, plan_tasks
-from .revise import apply_job_edits, require_docx
+from .revise import apply_job_edits, ensure_idle, require_docx
 from .service import version_file
 from .store import get_store
 
@@ -23,6 +23,7 @@ async def start_instructed_revision(version_id: str, *, notes: str, files: list[
     version = store.get_version(version_id)
     require_docx(version)
     pick_agents()
+    ensure_idle(store, version.id)
     texts = []
     if notes.strip():
         texts.append({"source": "notes", "text": notes.strip()[:200000]})
@@ -40,6 +41,7 @@ async def start_instructed_revision(version_id: str, *, notes: str, files: list[
         comments = await asyncio.to_thread(materials.read_comments, data, blocks)
     if not texts and not comments:
         raise ValueError("Bahan revisi kosong: isi catatan, unggah berkas, atau pakai komentar Word di dokumen")
+    ensure_idle(store, version.id)  # again: the awaits above let another request in
     job = store.create_job(version.document_id, version.id, "instructed_revision",
                            {"materials": texts, "comments": comments})
     await runner.start(job.id)

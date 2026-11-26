@@ -139,8 +139,8 @@ def _compare_pair(version_id: str, base: str):
     return v, b
 
 
-@router.get("/versions/{version_id}/compare")
-async def compare(version_id: str, base: str):
+@router.get("/versions/{base}/compare/{version_id}")
+async def compare(base: str, version_id: str):
     from .compare import block_diff
 
     v, b = _compare_pair(version_id, base)
@@ -148,8 +148,8 @@ async def compare(version_id: str, base: str):
     return {"base": asdict(b), "version": asdict(v), "blocks": blocks}
 
 
-@router.get("/versions/{version_id}/compare.docx")
-async def compare_docx(version_id: str, base: str):
+@router.get("/versions/{base}/compare/{version_id}/redline")
+async def compare_docx(base: str, version_id: str):
     from .compare import redline_docx
 
     v, b = _compare_pair(version_id, base)
@@ -215,7 +215,7 @@ async def create_review(version_id: str, body: dict | None = Body(default=None))
     if categories is not None and not isinstance(categories, list):
         raise HTTPException(422, "categories harus berupa daftar")
     job = await start_review(version_id, categories)
-    return {"job": asdict(job)}
+    return {"job": _job_json(job)}
 
 
 @router.get("/versions/{version_id}/jobs")
@@ -234,7 +234,100 @@ async def job_detail(job_id: str):
               "status": t.status, "attempts": t.attempts, "error": t.error, "output": t.output}
              for t in store.get_tasks(job_id)]
     counts = {"valid": 0, "rejected": 0, "needs_human": 0, **store.count_findings(job_id)}
-    return {"job": asdict(job), "tasks": tasks, "counts": counts}
+    return {"job": _job_json(job), "tasks": tasks, "counts": counts}
+
+
+def _job_json(job: Job) -> dict:
+    return {**asdict(job), "result_version_id": job.params.get("result_version_id")}
+
+
+def _start_error(exc: Exception) -> HTTPException:
+    from .revise import Conflict
+
+    return HTTPException(409 if isinstance(exc, Conflict) else 400, str(exc))  # RuntimeError: no usable team
+
+
+@router.post("/jobs/{job_id}/revisions", status_code=202)
+async def create_revision(job_id: str, body: dict | None = Body(default=None)):
+    from .revise import start_revision
+
+    _job_or_404(job_id)
+    categories = (body or {}).get("categories")
+    if categories is not None and not isinstance(categories, list):
+        raise HTTPException(422, "categories harus berupa daftar")
+    try:
+        job = await start_revision(job_id, categories)
+    except (ValueError, RuntimeError) as exc:
+        raise _start_error(exc) from exc
+    return {"job": _job_json(job)}
+
+
+@router.post("/versions/{version_id}/instructed-revisions", status_code=202)
+async def create_instructed_revision(version_id: str, notes: str = Form(""), use_comments: bool = Form(False),
+                                     files: list[UploadFile] = File(default=[])):
+    from .instructed import start_instructed_revision
+
+    _version_or_404(version_id)
+    loaded = [((f.filename or "bahan"), await _read_upload(f)) for f in files or []]
+    try:
+        job = await start_instructed_revision(version_id, notes=notes, files=loaded, use_comments=use_comments)
+    except (ValueError, RuntimeError) as exc:
+        raise _start_error(exc) from exc
+    return {"job": _job_json(job)}
+
+
+def _with_location(store, version_id: str, rows: list[dict], block_key: str) -> list[dict]:
+    blocks = {b.id: b for b in store.get_blocks(version_id)}
+    paths = {s.id: s.path for s in store.get_sections(version_id)}
+    for r in rows:
+        ids = r[block_key] if isinstance(r[block_key], list) else [r[block_key]]
+        b = next((blocks[i] for i in ids if i in blocks), None)
+        r["section_id"] = b.section_id if b else None
+        r["heading_path"] = paths.get(b.section_id) if b else None
+    return rows
+
+
+@router.get("/jobs/{job_id}/changes")
+async def job_changes(job_id: str):
+    job = _job_or_404(job_id)
+    store = get_store()
+    return _with_location(store, job.version_id, [asdict(c) for c in store.get_changes(job_id=job_id)], "block_id")
+
+
+@router.get("/versions/{version_id}/changes")
+async def version_changes(version_id: str):
+    """Changes that produced this version (applied), plus the log of jobs run on it."""
+    v = _version_or_404(version_id)
+    store = get_store()
+    rows = [asdict(c) for c in store.get_changes(version_id=version_id)]
+    base = v.parent_version_id if v.source in ("revision", "instructed_revision") else version_id
+    return _with_location(store, base or version_id, rows, "block_id")
+
+
+@router.get("/jobs/{job_id}/instructions")
+async def job_instructions(job_id: str):
+    job = _job_or_404(job_id)
+    store = get_store()
+    rows = [{**asdict(i), "_loc": i.block_ids or i.candidate_block_ids} for i in store.get_instructions(job_id)]
+    out = _with_location(store, job.version_id, rows, "_loc")
+    for r in out:
+        r.pop("_loc")
+    return out
+
+
+@router.get("/jobs/{job_id}/followup.docx")
+async def job_followup(job_id: str):
+    from .instructed import followup_docx
+
+    job = _job_or_404(job_id)
+    if job.type != "instructed_revision":
+        raise HTTPException(404, "tabel tindak lanjut hanya untuk revisi dari bahan")
+    data = await asyncio.to_thread(followup_docx, job_id)
+    doc = get_store().get_document(job.document_id)
+    v = get_store().get_version(job.version_id)
+    name = f"Tindak lanjut {doc.title if doc else 'dokumen'} v{v.version_no if v else ''}.docx"
+    return Response(data, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    headers={"Content-Disposition": _attachment(name)})
 
 
 @router.get("/jobs/{job_id}/findings")

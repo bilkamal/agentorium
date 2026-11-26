@@ -19,11 +19,25 @@ EDITABLE = ("language", "consistency", "structure")
 MUTATING_JOBS = ("revision", "instructed_revision")
 
 
+class Conflict(ValueError):
+    """The request is valid but the document's state does not allow it (HTTP 409)."""
+
+
+class Busy(Conflict):
+    """Another job that writes a new version from this one is still running."""
+
+
+def ensure_idle(store, version_id: str) -> None:
+    """Call with no await between it and create_job, so two requests cannot both pass."""
+    if any(j.type in MUTATING_JOBS for j in store.list_jobs(version_id, statuses=ACTIVE)):
+        raise Busy("revisi untuk versi ini masih berjalan")
+
+
 def require_docx(version) -> None:
     if version is None or version.status != "ready":
-        raise ValueError("versi belum siap")
+        raise Conflict("versi belum siap")
     if Path(version.filename).suffix.lower() != ".docx":
-        raise ValueError("revisi butuh dokumen DOCX (versi ini PDF)")
+        raise Conflict("revisi butuh dokumen DOCX (versi ini PDF)")
 
 
 async def start_revision(review_job_id: str, categories: list[str] | None = None) -> Job:
@@ -32,7 +46,7 @@ async def start_revision(review_job_id: str, categories: list[str] | None = None
     if rjob is None or rjob.type != "review":
         raise ValueError("job review tidak ditemukan")
     if rjob.status not in ("done", "partial"):
-        raise ValueError("review belum selesai")
+        raise Conflict("review belum selesai")
     version = store.get_version(rjob.version_id)
     require_docx(version)
     pick_agents()
@@ -41,6 +55,7 @@ async def start_revision(review_job_id: str, categories: list[str] | None = None
     wanted = {f.block_id for f in findings} | {f.other_block_id for f in findings if f.other_block_id}
     plan = [(sid, ids) for sid, ids in plan_tasks(store.get_sections(version.id), store.get_blocks(version.id))
             if wanted & set(ids)]
+    ensure_idle(store, version.id)
     job = store.create_job(version.document_id, version.id, "revision",
                            {"review_job_id": rjob.id, "categories": cats})
     store.add_tasks(job.id, [(sid, ids, "revision_section") for sid, ids in plan])
