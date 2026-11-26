@@ -13,7 +13,7 @@ from pathlib import Path
 from ..config import settings
 import numpy as np
 
-from .models import Block, Change, Chunk, Document, Fact, Finding, Job, ParsedDoc, Section, Task, Version
+from .models import Block, Change, Chunk, Instruction, Document, Fact, Finding, Job, ParsedDoc, Section, Task, Version
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY, title TEXT NOT NULL, label TEXT NOT NULL DEFAULT '',
@@ -61,6 +61,11 @@ CREATE TABLE IF NOT EXISTS changes(id TEXT PRIMARY KEY, version_id TEXT NOT NULL
   reason TEXT NOT NULL DEFAULT '', source_kind TEXT NOT NULL, source_ids TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL,
   note TEXT, ordinal INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS changes_by_version ON changes(version_id, ordinal);
+CREATE TABLE IF NOT EXISTS instructions(id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  ordinal INTEGER NOT NULL, source TEXT NOT NULL, author TEXT NOT NULL DEFAULT '', text TEXT NOT NULL,
+  quote TEXT NOT NULL DEFAULT '', block_ids TEXT NOT NULL DEFAULT '[]', candidate_block_ids TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL, response TEXT NOT NULL DEFAULT '');
+CREATE INDEX IF NOT EXISTS instructions_by_job ON instructions(job_id, ordinal);
 """
 
 MIGRATIONS = {"versions": [("index_status", "TEXT NOT NULL DEFAULT 'none'"), ("index_error", "TEXT"),
@@ -435,6 +440,36 @@ class Store:
         rows = self._db.execute(q + " ORDER BY ordinal", args).fetchall()
         return [Change(**{**{k: r[k] for k in r.keys() if k != "ordinal"}, "source_ids": json.loads(r["source_ids"])})
                 for r in rows]
+
+    def add_instructions(self, rows: list[dict]) -> list[Instruction]:
+        with self._db:
+            start = self._db.execute("SELECT COUNT(*) FROM instructions WHERE job_id=?",
+                                     (rows[0]["job_id"],)).fetchone()[0] if rows else 0
+            for i, r in enumerate(rows):
+                self._db.execute(
+                    "INSERT INTO instructions(id,job_id,ordinal,source,author,text,quote,block_ids,candidate_block_ids,"
+                    "status,response) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    (_new_id(), r["job_id"], start + i, r["source"], r.get("author") or "", r["text"],
+                     r.get("quote") or "", json.dumps(r.get("block_ids") or []),
+                     json.dumps(r.get("candidate_block_ids") or []), r.get("status") or "pending",
+                     r.get("response") or ""))
+        return self.get_instructions(rows[0]["job_id"]) if rows else []
+
+    def get_instructions(self, job_id: str) -> list[Instruction]:
+        rows = self._db.execute("SELECT * FROM instructions WHERE job_id=? ORDER BY ordinal", (job_id,)).fetchall()
+        return [Instruction(**{**dict(r), "block_ids": json.loads(r["block_ids"]),
+                               "candidate_block_ids": json.loads(r["candidate_block_ids"])}) for r in rows]
+
+    def update_instruction(self, instruction_id: str, **fields) -> None:
+        allowed = {"status", "response", "block_ids", "candidate_block_ids"}
+        if set(fields) - allowed:
+            raise ValueError(f"cannot update {sorted(set(fields) - allowed)}")
+        for k in ("block_ids", "candidate_block_ids"):
+            if k in fields:
+                fields[k] = json.dumps(fields[k])
+        with self._db:
+            self._db.execute(f"UPDATE instructions SET {','.join(f'{k}=?' for k in fields)} WHERE id=?",
+                             (*fields.values(), instruction_id))
 
     def add_facts(self, rows: list[dict]) -> list[str]:
         return self._insert_rows("facts", self.FACT_COLS, [{"unit": "", **r} for r in rows])

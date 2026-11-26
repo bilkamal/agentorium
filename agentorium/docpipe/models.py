@@ -151,3 +151,18 @@ class Change:
     source_ids: list[str]
     status: str  # applied | needs_human | rejected | suggestion
     note: str | None
+
+
+@dataclass
+class Instruction:
+    id: str
+    job_id: str
+    ordinal: int
+    source: str  # comment | notes | file:<name>
+    author: str
+    text: str
+    quote: str
+    block_ids: list[str]
+    candidate_block_ids: list[str]
+    status: str  # pending | done | not_applicable | needs_human
+    response: str
