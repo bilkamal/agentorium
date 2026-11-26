@@ -7,7 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from ..config import settings
 from .index import schedule_index
@@ -127,6 +127,47 @@ async def download(version_id: str, variant: str = "current"):
     suffix = {"original": " (asli)" if v.original_path else "", "tracked": " (tracked)"}.get(variant, "")
     name = f"{doc.title if doc else 'dokumen'} v{v.version_no}{suffix}{Path(path).suffix}"
     return FileResponse(path, filename=name)
+
+
+def _compare_pair(version_id: str, base: str):
+    v = _version_or_404(version_id)
+    b = _version_or_404(base)
+    if v.document_id != b.document_id:
+        raise HTTPException(400, "kedua versi harus dari dokumen yang sama")
+    if v.status != "ready" or b.status != "ready":
+        raise HTTPException(409, "versi belum siap")
+    return v, b
+
+
+@router.get("/versions/{version_id}/compare")
+async def compare(version_id: str, base: str):
+    from .compare import block_diff
+
+    v, b = _compare_pair(version_id, base)
+    blocks = await asyncio.to_thread(block_diff, get_store(), b.id, v.id)
+    return {"base": asdict(b), "version": asdict(v), "blocks": blocks}
+
+
+@router.get("/versions/{version_id}/compare.docx")
+async def compare_docx(version_id: str, base: str):
+    from .compare import redline_docx
+
+    v, b = _compare_pair(version_id, base)
+    try:
+        data = await asyncio.to_thread(redline_docx, get_store(), b.id, v.id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    doc = get_store().get_document(v.document_id)
+    name = f"{doc.title if doc else 'dokumen'} v{b.version_no} banding v{v.version_no}.docx"
+    return Response(data, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    headers={"Content-Disposition": _attachment(name)})
+
+
+def _attachment(name: str) -> str:
+    from urllib.parse import quote
+
+    ascii_name = name.encode("ascii", "replace").decode().replace('"', "'")
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name)}"
 
 
 @router.post("/versions/{version_id}/restore", status_code=201)
