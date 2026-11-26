@@ -134,3 +134,18 @@ def test_delete_document_cancels_running_review(client, tmp_path, team, monkeypa
     time.sleep(0.4)
     from agentorium.docpipe.jobs import runner
     assert not runner.is_running(job["id"])
+
+
+def test_delete_document_removes_its_office_sessions(client, tmp_path, team):  # noqa: F811
+    from agentorium.docpipe.store import get_store
+    from agentorium.server import orchestrator
+
+    doc_id, vid = upload(client, tmp_path)
+    store = get_store()
+    job = store.create_job(doc_id, vid, "review", {})
+    s = orchestrator.create_session(kind="external", title="Review: x v1")
+    store.update_job(job.id, params={"session_id": s.id})
+    other = orchestrator.create_session(kind="external", title="lain")
+    assert client.delete(f"/api/docs/{doc_id}").status_code == 200
+    assert orchestrator.get(s.id) is None and not s.path.exists()
+    assert orchestrator.get(other.id) is not None

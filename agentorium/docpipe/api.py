@@ -85,9 +85,15 @@ async def delete_document(doc_id: str):
         raise HTTPException(409, "perubahan sedang diterapkan ke dokumen — coba lagi sebentar")
     for job in mine:
         await runner.cancel(job.id)
+    sessions = [j.params.get("session_id") for j in store.list_jobs() if j.document_id == doc_id]
     if not store.delete_document(doc_id):
         raise HTTPException(404, "dokumen tidak ditemukan")
     shutil.rmtree(settings.data_dir / "docs" / doc_id, ignore_errors=True)
+    from . import office
+
+    if office.bridge is not None:  # the office sessions that showed this document's jobs go with it
+        for sid in filter(None, sessions):
+            office.bridge.orch.delete(sid)
     return {"ok": True}
 
 
