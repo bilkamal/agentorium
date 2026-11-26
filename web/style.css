@@ -206,3 +206,16 @@ button, select, textarea { font: inherit; color: inherit; }
 .search-results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .search-results li { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 12px; }
 .search-results li p { margin: 4px 0 0; white-space: pre-wrap; }
+
+.materials summary { cursor: pointer; color: var(--accent); }
+.materials-form { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.materials-form textarea { width: 100%; min-height: 80px; resize: vertical; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; }
+.materials-form > label.btn, .materials-form > button { align-self: flex-start; }
+.rev-result { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px; border-radius: 8px; background: var(--agent-bubble); }
+.findings-table td.old { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--bad); }
+.findings-table td.new { color: var(--ok); }
+.tag.ch-applied, .tag.in-done, .tag.cmp-added { color: var(--ok); }
+.tag.ch-needs_human, .tag.in-needs_human, .tag.cmp-changed { color: var(--warn); }
+.tag.ch-rejected, .tag.cmp-removed { color: var(--bad); }
+.tag.ch-suggestion, .tag.in-not_applicable { color: var(--info); }
+#compare-form select { max-width: 40vw; min-width: 0; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
