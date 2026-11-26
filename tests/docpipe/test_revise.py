@@ -159,6 +159,7 @@ def test_server_registers_revision_handler(tmp_settings):
 
     import agentorium.server as server
 
-    runner._handlers.pop("revision_section", None)
+    for k in ("revision_section", "instructed_section"):
+        runner._handlers.pop(k, None)
     with TestClient(server.app):
-        assert "revision_section" in runner._handlers
+        assert "revision_section" in runner._handlers and "instructed_section" in runner._handlers

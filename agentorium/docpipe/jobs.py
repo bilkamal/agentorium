@@ -25,7 +25,7 @@ class JobRunner:
     def __init__(self) -> None:
         self._handlers: dict[str, Handler] = {}
         self._finalizers: dict[str, Finalizer] = {}
-        self._preparers: dict[str, Finalizer] = {}
+        self._preparers: dict[str, tuple[Finalizer, bool]] = {}
         self._listeners: list[Listener] = []
         self._running: dict[str, asyncio.Task] = {}
 
@@ -36,9 +36,10 @@ class JobRunner:
     def register_finalizer(self, job_type: str, fn: Finalizer) -> None:
         self._finalizers[job_type] = fn
 
-    def register_preparer(self, job_type: str, fn: Finalizer) -> None:
-        """Runs once when the job starts or resumes, before any task."""
-        self._preparers[job_type] = fn
+    def register_preparer(self, job_type: str, fn: Finalizer, required: bool = False) -> None:
+        """Runs once when the job starts or resumes, before any task. A failing `required` preparer fails the job;
+        an optional one is only logged."""
+        self._preparers[job_type] = (fn, required)
 
     def on_event(self, fn: Listener) -> None:
         self._listeners.append(fn)
@@ -91,14 +92,23 @@ class JobRunner:
         job = store.update_job(job_id, status="running", started_at=job.started_at or time.time(), resume_at=None)
         self.emit(job, "started")
         try:
-            prep = self._preparers.get(job.type)
-            if prep is not None:
+            prep, required = self._preparers.get(job.type, (None, False))
+            while prep is not None:
                 try:
-                    await prep(job)
+                    await prep(store.get_job(job_id))
                 except asyncio.CancelledError:
                     raise
+                except LLMRateLimited as exc:
+                    await self._pause(job_id, exc)
+                    continue
                 except Exception as exc:  # e.g. indexing failed — sections can still be reviewed
                     log.warning("preparer failed for job %s: %s", job_id, exc)
+                    if required:
+                        job = store.update_job(job_id, status="failed", error=f"persiapan gagal: {exc}"[:1000],
+                                               finished_at=time.time())
+                        self.emit(job, "finished", {"status": "failed"})
+                        return
+                break
             while True:
                 limited: list[LLMRateLimited] = []
                 queued = [t for t in store.get_tasks(job_id) if t.status == "queued"]

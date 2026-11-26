@@ -194,3 +194,43 @@ def edit_supervisor_user(section_path: str, blocks_by_id: dict, edits: list[dict
             if sid in basis:
                 parts.append(f"    dasar {sid}: {basis[sid]}")
     return "\n".join(parts)
+
+
+INSTRUCTED_SCHEMA = {
+    "type": "object",
+    "properties": {
+        **EDIT_SCHEMA["properties"],
+        "responses": {"type": "array", "items": {"type": "object", "properties": {
+            "instruction_id": {"type": "string"}, "status": {"type": "string", "enum": ["done", "not_applicable"]},
+            "response": {"type": "string"}}, "required": ["instruction_id", "status", "response"]}},
+    },
+    "required": ["edits", "skipped", "responses"],
+}
+
+
+def instructed_worker_system(name: str) -> str:
+    return f"""Anda {name}, penyunting dokumen. Anda menerima satu bagian dokumen dan instruksi revisi dari atasan/klien.
+Kerjakan instruksi yang menyangkut blok di bagian ini.
+
+{EDIT_RULES}
+- Bila instruksi meminta nilai baru (angka, nama, tanggal), pakai persis nilai dari instruksi.
+- Untuk SETIAP instruksi yang Anda tangani, isi responses: status "done" bila Anda membuat edit untuknya,
+  "not_applicable" bila tidak perlu/tidak bisa dikerjakan di bagian ini; response = tanggapan singkat untuk atasan
+  (apa yang diubah, atau mengapa tidak).
+- Instruksi bertanda "kandidat lokasi" belum pasti tempatnya: kerjakan hanya bila jelas menyangkut blok di bagian ini."""
+
+
+def instructed_worker_user(section_path: str, blocks, instructions: list[dict],
+                           feedback: list[tuple[dict, str]] | None = None) -> str:
+    parts = [f"BAGIAN: {section_path}", "", "BLOK:", *(_block_line(b) for b in blocks), "", "INSTRUKSI:"]
+    for i in instructions:
+        where = (f"blok {', '.join('[' + b + ']' for b in i['block_ids'])}" if i["block_ids"]
+                 else f"kandidat lokasi {', '.join('[' + b + ']' for b in i['candidate_block_ids'])}")
+        who = f" dari {i['author']}" if i.get("author") else ""
+        quote = f" | merujuk: \"{i['quote']}\"" if i.get("quote") else ""
+        parts.append(f"- id={i['id']} ({i['source']}{who}; {where}): {i['text']}{quote}")
+    if feedback:
+        parts += ["", "REVISI DIMINTA SUPERVISOR. Perbaiki edit berikut sesuai feedback dan kirim ulang:"]
+        for e, fb in feedback:
+            parts.append(f"- edit [{e['block_id']}]: {e['new_text']}\n  feedback: {fb}")
+    return "\n".join(parts)

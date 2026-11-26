@@ -290,3 +290,50 @@ def test_server_startup_resumes_jobs(store):
                 break
             time.sleep(0.02)
     assert store.get_job(job.id).status == "done"
+
+
+def test_required_preparer_failure_fails_job(store):
+    job = new_job(store, 2)
+    r = JobRunner()
+    ran = []
+    r.register("t", lambda job, task: ran.append(task.id) or asyncio.sleep(0, {}))
+
+    async def prep(job):
+        raise RuntimeError("bahan tidak terbaca")
+
+    r.register_preparer("review", prep, required=True)
+
+    async def go():
+        await r.start(job.id)
+        await r.wait(job.id)
+
+    run(go())
+    j = store.get_job(job.id)
+    assert j.status == "failed" and "bahan tidak terbaca" in j.error and ran == []
+
+
+def test_rate_limited_preparer_pauses_then_retries(store):
+    object.__setattr__(settings, "rate_limit_wait", 0.05)
+    job = new_job(store, 1)
+    r = JobRunner()
+    calls = []
+
+    async def handler(job, task):
+        return {}
+
+    async def prep(job):
+        calls.append(1)
+        if len(calls) == 1:
+            raise LLMRateLimited("usage limit")
+
+    r.register("t", handler)
+    r.register_preparer("review", prep, required=True)
+    events = []
+    r.on_event(lambda job, event, payload: events.append(event))
+
+    async def go():
+        await r.start(job.id)
+        await r.wait(job.id)
+
+    run(go())
+    assert len(calls) == 2 and "paused" in events and store.get_job(job.id).status == "done"

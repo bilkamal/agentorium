@@ -45,11 +45,12 @@ def _clean(raw, blocks_by_id, basis: dict[str, str], doc_texts: list[str], rejec
 
 async def edit_loop(*, wllm, sllm, worker_system: str, user_for, section_path: str, blocks_by_id: dict,
                     basis: dict[str, str], doc_texts: list[str], purpose: str, hooks=None, job=None, task=None,
-                    worker=None, supervisor=None) -> EditOutcome:
+                    worker=None, supervisor=None, schema=None) -> EditOutcome:
     """`user_for(feedback)` builds the worker prompt; `basis` maps source id → text the edits may rely on."""
     res = EditOutcome()
+    schema = schema or prompts.EDIT_SCHEMA
     reply = await wllm.complete_json(worker_system, [{"role": "user", "content": user_for(None)}],
-                                     prompts.EDIT_SCHEMA, purpose=purpose)
+                                     schema, purpose=purpose)
     res.extra = {k: v for k, v in reply.items() if k not in ("edits", "skipped")}
     res.skipped = [{"source_id": str(s.get("source_id") or s.get("finding_id") or s.get("instruction_id") or ""),
                     "reason": str(s.get("reason") or "")} for s in reply.get("skipped") or [] if isinstance(s, dict)]
@@ -85,6 +86,6 @@ async def edit_loop(*, wllm, sllm, worker_system: str, user_for, section_path: s
             break
         rounds += 1
         reply = await wllm.complete_json(worker_system, [{"role": "user", "content": user_for(to_revise)}],
-                                         prompts.EDIT_SCHEMA, purpose=f"{purpose}_revise")
+                                         schema, purpose=f"{purpose}_revise")
         candidates = _clean(reply.get("edits"), blocks_by_id, basis, doc_texts, res.rejected)
     return res
