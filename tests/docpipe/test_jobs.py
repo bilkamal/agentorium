@@ -344,3 +344,56 @@ def test_cancel_refused_while_finalizing(store):
     store.update_job(job.id, status="finalizing")
     assert run(JobRunner().cancel(job.id)) is False
     assert store.get_job(job.id).status == "finalizing"
+
+
+def test_retry_reruns_only_failed_tasks_and_the_finalizer(store):
+    job = new_job(store, 3)
+    r = JobRunner()
+    calls, fin = {}, []
+    broken = {"on": True}
+
+    async def handler(job, task):
+        calls[task.section_id] = calls.get(task.section_id, 0) + 1
+        if broken["on"] and task.section_id == "s0002":
+            raise RuntimeError("SSL certificate verification failed")
+        return {"n": task.ordinal}
+
+    async def finalizer(job):
+        fin.append(job.id)
+        if broken["on"]:
+            raise RuntimeError("SSL certificate verification failed")
+
+    r.register("t", handler)
+    r.register_finalizer("review", finalizer)
+
+    async def go():
+        await r.start(job.id)
+        await r.wait(job.id)
+        assert store.get_job(job.id).status == "partial"
+        broken["on"] = False
+        assert await r.retry(job.id) is True
+        await r.wait(job.id)
+
+    run(go())
+    j = store.get_job(job.id)
+    assert j.status == "done" and j.failed_tasks == 0 and j.done_tasks == 3 and j.error is None
+    assert calls == {"s0000": 1, "s0001": 1, "s0002": 3}  # 2 failed attempts, then 1 on retry
+    assert len(fin) == 2
+
+
+def test_retry_refused_for_finished_or_active_jobs(store):
+    job = new_job(store, 1)
+    r = JobRunner()
+
+    async def handler(job, task):
+        return {}
+
+    r.register("t", handler)
+
+    async def go():
+        assert await r.retry(job.id) is False  # queued, never ran
+        await r.start(job.id)
+        await r.wait(job.id)
+        assert await r.retry(job.id) is False  # done: nothing to retry
+
+    run(go())

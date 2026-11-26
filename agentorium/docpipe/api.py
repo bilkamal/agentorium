@@ -369,6 +369,16 @@ async def job_findings(job_id: str, status: str | None = None, category: str | N
     return out
 
 
+@router.post("/jobs/{job_id}/retry")
+async def retry_job(job_id: str):
+    job = _job_or_404(job_id)
+    if job.type != "review":  # revisions write a version once; re-running them is a new revision
+        raise HTTPException(409, "hanya review yang bisa diulang")
+    if not await runner.retry(job_id):
+        raise HTTPException(409, "tidak ada bagian gagal yang bisa diulang")
+    return {"ok": True}
+
+
 @router.post("/jobs/{job_id}/cancel")
 async def cancel_job(job_id: str):
     _job_or_404(job_id)
