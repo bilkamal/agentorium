@@ -209,6 +209,7 @@ button, select, textarea { font: inherit; color: inherit; }
 
 .materials summary { cursor: pointer; color: var(--accent); }
 .materials-form { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.materials-form input[type="text"] { padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; max-width: 320px; }
 .materials-form textarea { width: 100%; min-height: 80px; resize: vertical; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; }
 .materials-form > label.btn, .materials-form > button { align-self: flex-start; }
 .rev-result { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px; border-radius: 8px; background: var(--agent-bubble); }

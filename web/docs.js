@@ -44,6 +44,9 @@
       followup_counts: 'selesai {done} · tidak dikerjakan {not_applicable} · perlu dicek {needs_human}',
       no_changes: 'Tidak ada perubahan.', files_n: '{n} berkas', need_material: 'Isi catatan, pilih berkas, atau centang komentar Word.',
       compare: 'Bandingkan versi', compare_go: 'Bandingkan', compare_redline: 'Unduh redline (DOCX)', cmp_same: 'Pilih dua versi yang berbeda.',
+      update_title: 'Update berkala (laporan periode baru dari data baru)', period_ph: 'Periode baru, mis. November 2026',
+      update_files: 'Pilih berkas data (xlsx, csv, docx, pdf, txt)', update_notes_ph: 'Catatan tambahan (opsional), mis. fokus ke penjualan',
+      update_start: 'Mulai update', kind_update: 'Update berkala', need_data: 'Isi periode baru dan pilih minimal satu berkas data.',
       cmp_added: 'ditambah', cmp_removed: 'dihapus', cmp_changed: 'diubah', cmp_summary: '{changed} diubah · {added} ditambah · {removed} dihapus', cmp_none: 'Isi kedua versi sama.',
     },
     en: {
@@ -86,6 +89,9 @@
       followup_counts: 'done {done} · not done {not_applicable} · needs check {needs_human}',
       no_changes: 'No changes.', files_n: '{n} files', need_material: 'Write notes, choose files, or tick Word comments.',
       compare: 'Compare versions', compare_go: 'Compare', compare_redline: 'Download redline (DOCX)', cmp_same: 'Pick two different versions.',
+      update_title: 'Periodic update (new period report from new data)', period_ph: 'New period, e.g. November 2026',
+      update_files: 'Choose data files (xlsx, csv, docx, pdf, txt)', update_notes_ph: 'Extra notes (optional), e.g. focus on sales',
+      update_start: 'Start update', kind_update: 'Periodic update', need_data: 'Enter the new period and choose at least one data file.',
       cmp_added: 'added', cmp_removed: 'removed', cmp_changed: 'changed', cmp_summary: '{changed} changed · {added} added · {removed} removed', cmp_none: 'Both versions have the same content.',
     },
   };
@@ -98,7 +104,7 @@
 
   const state = { docs: [], doc: null, versions: [], versionId: null, sectionId: null, sections: [], job: null, poll: null,
     rjob: null, rpoll: null };
-  const MUTATING = ['revision', 'instructed_revision'];
+  const MUTATING = ['revision', 'instructed_revision', 'update'];
   const isDocx = (v) => !!v && /\.docx$/i.test(v.filename || '');
   const ACTIVE = ['queued', 'running', 'paused', 'finalizing'];
 
@@ -335,6 +341,7 @@
     const review = state.job?.job;
     $('#doc-revise').disabled = !ok || !review || !['done', 'partial'].includes(review.status) || !state.job.counts.valid;
     $('#rev-start').disabled = !ok;
+    $('#upd-start').disabled = !ok;
     $('#revision-box').hidden = !!v && !isDocx(v);
   }
 
@@ -430,6 +437,25 @@
       const res = await api(`/api/docs/versions/${state.versionId}/instructed-revisions`, { method: 'POST', body: form });
       $('#materials-form').reset();
       $('#rev-files-names').textContent = '';
+      await refreshRevision(res.job.id);
+    } catch (err) { showError(err.message); updateRevisionButtons(); }
+  }
+
+  async function startUpdate(e) {
+    e.preventDefault();
+    const period = $('#upd-period').value.trim();
+    const files = [...$('#upd-files').files];
+    if (!period || !files.length) { showError(t('need_data')); return; }
+    const form = new FormData();
+    form.append('period_label', period);
+    form.append('notes', $('#upd-notes').value);
+    files.forEach((f) => form.append('files', f));
+    showError('');
+    $('#upd-start').disabled = true;
+    try {
+      const res = await api(`/api/docs/versions/${state.versionId}/updates`, { method: 'POST', body: form });
+      $('#update-form').reset();
+      $('#upd-files-names').textContent = '';
       await refreshRevision(res.job.id);
     } catch (err) { showError(err.message); updateRevisionButtons(); }
   }
@@ -653,6 +679,8 @@
   $('#doc-revise').addEventListener('click', startRevision);
   $('#materials-form').addEventListener('submit', startInstructed);
   $('#rev-files').addEventListener('change', (e) => { const n = e.target.files.length; $('#rev-files-names').textContent = n ? t('files_n', { n }) : ''; });
+  $('#update-form').addEventListener('submit', startUpdate);
+  $('#upd-files').addEventListener('change', (e) => { const n = e.target.files.length; $('#upd-files-names').textContent = n ? t('files_n', { n }) : ''; });
   $('#rev-cancel').addEventListener('click', cancelRevision);
   $('#rev-office').addEventListener('click', openRevisionOffice);
   $('#compare-form').addEventListener('submit', compareVersions);

@@ -96,6 +96,25 @@ def data_for_section(sources: list[dict], section_text: str, limit: int = MAX_DA
     return "\n".join(out)
 
 
+_SCALE = {"ribu": 1e3, "juta": 1e6, "miliar": 1e9, "milyar": 1e9, "triliun": 1e12}
+_SCALED = re.compile(r"(\d[\d.,]*)\s*(ribu|juta|miliar|milyar|triliun)\b", re.I)
+
+
+def _scaled_ok(text: str, known: set[str]) -> set[str]:
+    """Numbers written with a unit word ("286 juta") that equal a data value (286000000): a unit, not a derivation."""
+    from .consistency import _parse_number
+
+    ok = set()
+    for m in _SCALED.finditer(text):
+        n = _parse_number(m.group(1))
+        if n is None:
+            continue
+        full = _parse_number(str(round(float(n) * _SCALE[m.group(2).lower()])))
+        if full in known:
+            ok.add(n)
+    return ok
+
+
 def _constant(x: str) -> bool:
     """Scale factors and small counts a formula may use without a source: 10, 100, 1000000 …, and 1–12."""
     return bool(re.fullmatch(r"10*", x)) or (x.isdigit() and 1 <= int(x) <= 12)
@@ -119,7 +138,7 @@ def check_update_edit(old: str, e: dict, known: set[str], *, doc_tokens: set[str
     if not text.strip() or not 0.3 <= ratio <= 3.0:
         return "teks baru kosong atau panjangnya berubah terlalu jauh"
     values = {v for f in formulas for v in _tokens(f["value"])}
-    added = sorted(_tokens(text) - _tokens(old) - known - values)
+    added = sorted(_tokens(text) - _tokens(old) - known - values - _scaled_ok(text, known))
     if added:
         return f"angka/tanggal tanpa sumber di data: {', '.join(added)}"
     return None

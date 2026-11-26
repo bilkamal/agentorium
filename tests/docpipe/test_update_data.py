@@ -56,3 +56,11 @@ def test_check_update_edit_resolves_calc_and_requires_sources():
     # numbers kept from the old text are fine; numbers from elsewhere in the old document only inside a formula
     e = {"new_text": "Survei 2026 diikuti 131.5 responden."}
     assert check_update_edit("Survei 2026 diikuti 125 responden.", e, known, doc_tokens=set()) is None
+
+
+def test_number_with_unit_word_matches_scaled_data():
+    known = {"286000000", "1200000000", "260000000"}
+    e = {"new_text": "Penjualan naik menjadi Rp 286 juta; aset Rp 1,2 miliar."}
+    assert check_update_edit("Penjualan Rp 260 juta; aset Rp 1 miliar.", e, known, doc_tokens=set()) is None
+    e = {"new_text": "Penjualan naik menjadi Rp 287 juta."}
+    assert "287" in check_update_edit("Penjualan Rp 260 juta.", e, known, doc_tokens=set())

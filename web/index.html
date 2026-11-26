@@ -146,6 +146,17 @@
             <button type="submit" id="rev-start" class="btn primary" data-d="materials_start">Mulai revisi dari bahan</button>
           </form>
         </details>
+        <details id="update-box" class="materials">
+          <summary data-d="update_title">Update berkala (laporan periode baru dari data baru)</summary>
+          <form id="update-form" class="materials-form">
+            <input type="text" id="upd-period" data-dp="period_ph" placeholder="Periode baru, mis. November 2026" required>
+            <label class="btn small"><span data-d="update_files">Pilih berkas data (xlsx, csv, docx, pdf, txt)</span>
+              <input type="file" id="upd-files" accept=".xlsx,.csv,.docx,.pdf,.txt,.md" multiple hidden></label>
+            <span id="upd-files-names" class="muted"></span>
+            <textarea id="upd-notes" rows="2" data-dp="update_notes_ph" placeholder="Catatan tambahan (opsional), mis. fokus ke penjualan"></textarea>
+            <button type="submit" id="upd-start" class="btn primary" data-d="update_start">Mulai update</button>
+          </form>
+        </details>
         <div class="review-bar">
           <span id="rev-status" class="muted"></span>
           <button id="rev-cancel" class="btn small" data-d="cancel" hidden>Batalkan</button>
