@@ -118,7 +118,7 @@ async def review_task(job: Job, task: Task) -> dict:
     rounds = 0
     while candidates:
         if hooks:
-            hooks.submitted(job, task, worker, supervisor, len(candidates))
+            hooks.submitted(job, task, worker, supervisor, len(candidates), items=candidates, round_=rounds)
         verdict_reply = await sllm.complete_json(
             prompts.SUPERVISOR_SYSTEM,
             [{"role": "user", "content": prompts.supervisor_user(section.path, blocks_by_id, candidates)}],
@@ -146,6 +146,8 @@ async def review_task(job: Job, task: Task) -> dict:
             needs_human += [_row(job, task, f, "needs_human", f"supervisor: {fb}".strip()) for f, fb in to_revise]
             break
         rounds += 1
+        if hooks:
+            hooks.revise_requested(job, task, worker, supervisor, to_revise)
         reply = await wllm.complete_json(wsys, [{"role": "user", "content": prompts.worker_user(
             doc.title if doc else "", outline, section.path, blocks, hits, feedback=to_revise)}],
             prompts.WORKER_SCHEMA, purpose="doc_review_revise")
@@ -155,7 +157,7 @@ async def review_task(job: Job, task: Task) -> dict:
     if facts:
         store.add_facts([{**f, "job_id": job.id, "version_id": job.version_id} for f in facts])
     if hooks:
-        hooks.task_finished(job, task, worker, supervisor, len(valid))
+        hooks.task_finished(job, task, worker, supervisor, len(valid), rejected=rejected, held=needs_human)
     return {"findings": len(valid), "rejected": len(rejected), "needs_human": len(needs_human),
             "facts": len(facts), "worker": worker.id}
 

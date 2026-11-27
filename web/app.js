@@ -291,7 +291,7 @@
       case 'flow': text = `${nameOf(e.source)} → ${nameOf(e.target)}: ${translateFlow(e.label)}`; break;
       case 'plan': text = `${t('plan')} ${e.status === 'draft' ? t('plan_draft') : t('plan_agreed')} · ${(e.plan?.steps || []).length} ${t('step').toLowerCase()}`; break;
       case 'step': text = `${t('step')} ${e.step_id}${e.assignee ? ` (${nameOf(e.assignee)})` : ''}: ${e.status} (${t('attempt')} ${e.attempt})`; break;
-      case 'review': text = `${t('step').toLowerCase()} ${e.step_id}: ${t('verdict')[e.verdict] || e.verdict}${e.score != null ? ` · ${e.score}/10` : ''} — ${e.feedback || ''}`; break;
+      case 'review': text = `${t('step').toLowerCase()} ${e.step_id}: ${t('verdict')[e.verdict] || e.verdict}${e.score != null ? ` · ${e.score}/10` : ''} — ${(e.feedback || '').split('\n')[0]}`; break;
       case 'output': text = `${nameOf(e.agent)} · ${t('step').toLowerCase()} ${e.step_id} (${t('attempt')} ${e.attempt})`; break;
       case 'note': text = `${nameOf(e.agent)}: ${e.message}`; break;
       case 'error': text = e.message === 'Cancelled by user' ? t('cancelled') : e.message; break;
@@ -302,6 +302,7 @@
     }
     li.innerHTML = `<time>${fmtTime(e.ts)}</time><span>${ICONS[e.type] || '•'}</span><span>${escapeHtml(text)}</span>`;
     if (e.type === 'output') li.innerHTML += `<details><summary>${t('show_output')}</summary><pre>${escapeHtml(e.output)}</pre></details>`;
+    if (e.type === 'review' && (e.feedback || '').includes('\n')) li.innerHTML += `<details><summary>${t('show_output')}</summary><pre>${escapeHtml(e.feedback)}</pre></details>`;
     const log = $('#log');
     log.appendChild(li);
     log.scrollTop = log.scrollHeight;

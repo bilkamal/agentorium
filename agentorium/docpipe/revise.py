@@ -98,7 +98,8 @@ async def revision_task(job: Job, task: Task) -> dict:
         if fid not in handled and fid not in skipped:
             skipped[fid] = "tidak ada edit dari worker"
     if hooks:
-        hooks.task_finished(job, task, worker, supervisor, len(out.approved))
+        hooks.task_finished(job, task, worker, supervisor, len(out.approved), rejected=out.rejected,
+                            held=out.needs_human)
     return {"edits": out.approved, "rejected": out.rejected, "needs_human": out.needs_human,
             "skipped": [{"source_id": k, "reason": v} for k, v in skipped.items()], "worker": worker.id}
 

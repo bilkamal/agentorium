@@ -77,7 +77,7 @@ async def edit_loop(*, wllm, sllm, worker_system: str, user_for, section_path: s
     rounds = 0
     while candidates:
         if hooks:
-            hooks.submitted(job, task, worker, supervisor, len(candidates))
+            hooks.submitted(job, task, worker, supervisor, len(candidates), items=candidates, round_=rounds)
         verdict_reply = await sllm.complete_json(
             prompts.EDIT_SUPERVISOR_SYSTEM,
             [{"role": "user", "content": supervisor_context
@@ -105,6 +105,8 @@ async def edit_loop(*, wllm, sllm, worker_system: str, user_for, section_path: s
             res.needs_human += [{**e, "note": f"supervisor: {fb}".strip()} for e, fb in to_revise]
             break
         rounds += 1
+        if hooks:
+            hooks.revise_requested(job, task, worker, supervisor, to_revise)
         reply = await wllm.complete_json(worker_system, [{"role": "user", "content": user_for(to_revise)}],
                                          schema, purpose=f"{purpose}_revise")
         # only the edits the supervisor asked to revise go back to it; re-sent approved edits are ignored

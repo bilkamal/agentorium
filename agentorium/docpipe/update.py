@@ -248,7 +248,8 @@ async def update_task(job: Job, task: Task) -> dict:
     rejected = [e for e in out.rejected if e not in held]
     skipped = [{"block_id": s["source_id"], "reason": s["reason"]} for s in out.skipped if s["source_id"] in blocks_by_id]
     if hooks:
-        hooks.task_finished(job, task, worker, supervisor, len(out.approved))
+        hooks.task_finished(job, task, worker, supervisor, len(out.approved), rejected=out.rejected,
+                            held=out.needs_human)
     return {"edits": out.approved, "rejected": rejected, "needs_human": out.needs_human + held,
             "held": skipped, "worker": worker.id}
 
