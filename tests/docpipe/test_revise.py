@@ -152,6 +152,9 @@ def test_office_events_for_revision(reviewed, team, llm):  # noqa: F811
     s = o.get(job.params["session_id"])
     assert s.title.startswith("Revisi: ") and s.stage == "done"
     assert any(e["type"] == "flow" for e in s.events) and any(e["type"] == "note" for e in s.events)
+    out = [e for e in s.events if e["type"] == "output"]
+    assert any("Usulan edit" in e["output"] and NEW[:20] in e["output"] for e in out)
+    assert any(e["type"] == "review" and "Diterima 1" in e["feedback"] for e in s.events)
 
 
 def test_server_registers_revision_handler(tmp_settings):

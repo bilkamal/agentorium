@@ -27,6 +27,28 @@ def _safe(fn):
     return wrapper
 
 
+def _describe(x: dict) -> str:
+    """One line for a finding or an edit, as the agents exchanged it."""
+    if "new_text" in x:
+        return f"{x.get('block_id', '')}: “{_short(x.get('new_text', ''), 160)}” — {_short(x.get('reason', ''), 120)}"
+    quote = f" — “{_short(x.get('quote', ''), 80)}”" if x.get("quote") else ""
+    return f"[{x.get('category', '')}] {_short(x.get('description', ''), 220)}{quote}"
+
+
+def _why(x: dict) -> str:
+    note = x.get("validator_note") or x.get("note") or ""
+    return _short(note.removeprefix("supervisor: ").removeprefix("supervisor:"), 200) or "tanpa alasan"
+
+
+def _short(s: str, n: int) -> str:
+    s = " ".join(str(s).split())
+    return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def _cap(s: str, n: int = 4000) -> str:
+    return s if len(s) <= n else s[: n - 1] + "…"
+
+
 class OfficeBridge:
     def __init__(self, orchestrator):
         self.orch = orchestrator
@@ -84,14 +106,34 @@ class OfficeBridge:
         self._push(job, {"type": "agent_status", "agent": worker.id, "status": "working"})
 
     @_safe
-    def submitted(self, job, task, worker, supervisor, n: int) -> None:
+    def submitted(self, job, task, worker, supervisor, n: int, items: list[dict] | None = None,
+                  round_: int = 0) -> None:
         self._push(job, {"type": "flow", "source": worker.id, "target": supervisor.id, "label": "result"})
+        if items:  # the worker's report, as it is sent to the supervisor
+            head = "Temuan" if job.type == "review" else "Usulan edit"
+            again = " (setelah diperbaiki)" if round_ else ""
+            body = "\n".join(f"{i}. {_describe(x)}" for i, x in enumerate(items, 1))
+            self._push(job, {"type": "output", "agent": worker.id, "step_id": task.ordinal + 1, "attempt": round_ + 1,
+                             "output": _cap(f"{head}{again} — {len(items)}:\n{body}")})
         self._push(job, {"type": "agent_status", "agent": worker.id, "status": "idle"})
         self._push(job, {"type": "agent_status", "agent": supervisor.id, "status": "reviewing"})
 
     @_safe
-    def task_finished(self, job, task, worker, supervisor, n_valid: int) -> None:
+    def revise_requested(self, job, task, worker, supervisor, items: list[tuple[dict, str]]) -> None:
+        body = "\n".join(f"{i}. {_describe(x)} → {fb or 'perbaiki'}" for i, (x, fb) in enumerate(items, 1))
+        self._push(job, {"type": "flow", "source": supervisor.id, "target": worker.id, "label": "revise"})
+        self._push(job, {"type": "review", "step_id": task.ordinal + 1, "verdict": "revise",
+                         "feedback": _cap(f"Minta perbaiki {len(items)}:\n{body}")})
+
+    @_safe
+    def task_finished(self, job, task, worker, supervisor, n_valid: int, rejected: list[dict] | None = None,
+                      held: list[dict] | None = None) -> None:
         step = task.ordinal + 1
+        rejected, held = rejected or [], held or []
+        lines = [f"Diterima {n_valid} · Ditolak {len(rejected)} · Perlu dicek {len(held)}"]
+        lines += [f"✗ {_describe(x)} — {_why(x)}" for x in rejected]
+        lines += [f"? {_describe(x)} — {_why(x)}" for x in held]
+        self._push(job, {"type": "review", "step_id": step, "verdict": "approve", "feedback": _cap("\n".join(lines))})
         self._push(job, {"type": "agent_status", "agent": worker.id, "status": "idle"})
         self._push(job, {"type": "agent_status", "agent": supervisor.id, "status": "idle"})
         self._push(job, {"type": "step", "step_id": step, "status": "done", "attempt": task.attempts + 1,

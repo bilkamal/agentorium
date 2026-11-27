@@ -107,3 +107,39 @@ def test_server_startup_installs_bridge_and_review_handler(tmp_settings):
     finally:
         office.bridge = old
         runner.register("section_review", review.review_task)
+
+
+def test_conversation_of_each_section_is_shown(orch, setup, team):  # noqa: F811
+    store, v = setup
+    job = run_review(v)
+    s = orch.get(store.get_job(job.id).params["session_id"])
+    outputs = [e for e in s.events if e["type"] == "output"]
+    reviews = [e for e in s.events if e["type"] == "review"]
+    # the worker's report: what it found, quoted
+    assert any(e["agent"] in ("w1", "w2") and "x" in e["output"] and "Temuan" in e["output"] for e in outputs)
+    # the supervisor's answer for that section
+    assert any("Diterima 1" in e["feedback"] for e in reviews)
+    assert all(e["step_id"] >= 1 for e in outputs + reviews)
+
+
+def test_supervisor_rejection_reason_and_revise_request_are_shown(orch, tmp_settings, tmp_path, monkeypatch,
+                                                                 fake_embedder, team):  # noqa: F811
+    store = get_store()
+    _, v = ingest(store, filename="a.docx", data=make_basic_docx(tmp_path).read_bytes())
+    object.__setattr__(settings, "llm_concurrency", 1)
+    calls, replies = [], {"worker": [], "supervisor": []}
+    monkeypatch.setattr(review, "make_llm", ScriptedLLM(replies, calls).for_agent)
+    n = len(review.plan_tasks(store.get_sections(v.id), store.get_blocks(v.id)))
+    b = store.get_blocks(v.id)[0]
+    f = lambda d: {"block_id": b.id, "category": "language", "severity": "low", "quote": b.text[:8],  # noqa: E731
+                   "description": d, "suggestion": "", "confidence": 0.5}
+    replies["worker"] += [{"findings": [f("salah eja"), f("kalimat janggal")], "facts": []},
+                          {"findings": [f("kalimat janggal, diperjelas")], "facts": []}] + [{"findings": [], "facts": []}] * (n - 1)
+    replies["supervisor"] += [{"verdicts": [{"index": 0, "verdict": "reject", "feedback": "bukan salah eja"},
+                                            {"index": 1, "verdict": "revise", "feedback": "kutip kalimatnya"}]},
+                              {"verdicts": [{"index": 0, "verdict": "approve", "feedback": ""}]}]
+    job = run_review(v)
+    s = orch.get(store.get_job(job.id).params["session_id"])
+    reviews = [e for e in s.events if e["type"] == "review"]
+    assert any(e["verdict"] == "revise" and "kutip kalimatnya" in e["feedback"] for e in reviews)
+    assert any("Ditolak 1" in e["feedback"] and "bukan salah eja" in e["feedback"] for e in reviews)

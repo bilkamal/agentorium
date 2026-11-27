@@ -110,7 +110,8 @@ async def instructed_task(job: Job, task: Task) -> dict:
                   "response": str(r.get("response") or "")}
                  for r in out.extra.get("responses") or [] if isinstance(r, dict)]
     if hooks:
-        hooks.task_finished(job, task, worker, supervisor, len(out.approved))
+        hooks.task_finished(job, task, worker, supervisor, len(out.approved), rejected=out.rejected,
+                            held=out.needs_human)
     return {"edits": out.approved, "rejected": out.rejected, "needs_human": out.needs_human,
             "skipped": [s for s in out.skipped if s["source_id"] in basis],
             "responses": [r for r in responses if r["instruction_id"] in basis], "worker": worker.id}
